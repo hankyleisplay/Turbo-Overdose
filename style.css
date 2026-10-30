@@ -24,7 +24,15 @@ html, body {
 #speedo { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); text-align: center; }
 #speed { font-family: Orbitron, monospace; font-weight: 900; font-size: 64px; line-height: 1; text-shadow: 0 3px 10px rgba(0,0,0,.6); }
 .unit { font-family: Orbitron, monospace; font-size: 12px; letter-spacing: 3px; opacity: .8; }
-#nitro { margin: 8px auto 2px; width: 220px; height: 10px; border-radius: 6px; background: rgba(255,255,255,.18); overflow: hidden; }
+.speedrow { display: flex; align-items: center; justify-content: center; gap: 14px; }
+#gear {
+  font-family: Orbitron, monospace; font-weight: 900; font-size: 30px; width: 46px; height: 46px; line-height: 46px;
+  border-radius: 10px; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.35);
+}
+#rpm { margin: 8px auto 0; width: 220px; height: 6px; border-radius: 4px; background: rgba(255,255,255,.15); overflow: hidden; }
+#rpmfill { height: 100%; width: 0; background: linear-gradient(90deg, #7cff6b, #ffd23f 70%, #ff3d3d); transition: width .05s; }
+#rpmfill.red { box-shadow: 0 0 10px #ff3d3d; }
+#nitro { margin: 6px auto 2px; width: 220px; height: 10px; border-radius: 6px; background: rgba(255,255,255,.18); overflow: hidden; }
 #nitrofill { height: 100%; width: 50%; background: linear-gradient(90deg, #2bd0ff, #8a5bff); box-shadow: 0 0 12px #2bd0ff; }
 .nlabel { font-family: Orbitron, monospace; font-size: 10px; letter-spacing: 4px; opacity: .7; }
 #center {
@@ -94,7 +102,8 @@ button.go {
   .stat.big span:last-child { font-size: 34px; }
   #speedo { bottom: auto; top: 12px; }
   #speed { font-size: 40px; }
-  #nitro { width: 130px; }
+  #nitro, #rpm { width: 130px; }
+  #gear { font-size: 20px; width: 34px; height: 34px; line-height: 34px; }
   #center { font-size: 64px; }
   h1 { font-size: 34px; }
   body.touch #speedo { top: 12px; }

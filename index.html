@@ -8,7 +8,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
 </script>
 </head>
 <body>
@@ -26,7 +29,8 @@
   </div>
   <canvas id="minimap" width="200" height="200"></canvas>
   <div id="speedo">
-    <div id="speed">0</div><div class="unit">KM/H</div>
+    <div class="speedrow"><div id="gear">1</div><div><div id="speed">0</div><div class="unit">KM/H</div></div></div>
+    <div id="rpm"><div id="rpmfill"></div></div>
     <div id="nitro"><div id="nitrofill"></div></div>
     <div class="nlabel">NITRO</div>
   </div>
@@ -57,11 +61,17 @@
         <button data-d="easy">簡單</button><button data-d="normal" class="on">普通</button><button data-d="hard">困難</button>
       </div>
     </div>
+    <div class="row"><div class="rlabel">畫質</div>
+      <div id="quals" class="choices">
+        <button data-q="low">低</button><button data-q="medium">中</button><button data-q="high">高</button>
+      </div>
+    </div>
     <button id="startBtn" class="go">開始比賽</button>
     <div class="help">
       <b>W / ↑</b> 油門　<b>S / ↓</b> 煞車/倒車　<b>A D / ← →</b> 轉向<br>
       <b>空白鍵</b> 甩尾（集氮氣）　<b>Shift</b> 氮氣加速　<b>R</b> 回到賽道<br>
-      <b>C</b> 切換視角　<b>M</b> 靜音　<b>P / Esc</b> 暫停
+      <b>C</b> 切換視角　<b>M</b> 靜音　<b>P / Esc</b> 暫停<br>
+      🎮 搖桿：<b>RT</b> 油門　<b>LT</b> 煞車　<b>左搖桿</b> 轉向　<b>A</b> 氮氣　<b>B / X</b> 甩尾　<b>Y</b> 視角
     </div>
   </div>
 </div>
