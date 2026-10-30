@@ -334,6 +334,9 @@ function makeEntity(name, color, isPlayer, skill = 1) {
   return e;
 }
 const player = makeEntity('你', COLORS[0], true);
+player.model.boostLight = new THREE.PointLight(0x55bbff, 0, 9, 2);
+player.model.boostLight.position.set(0, 0.6, -3.2);
+player.model.root.add(player.model.boostLight);
 AI_NAMES.forEach((n, i) => makeEntity(n, COLORS[(i + 1) % COLORS.length], false, AI_SKILL[i]));
 
 const skids = new SkidMarks(scene);
@@ -455,10 +458,11 @@ function initAudio() {
   };
   const squeal = noise('bandpass', 1500, 7);
   const wind = noise('lowpass', 600, 0.5);
+  const hiss = noise('bandpass', 3200, 0.6);
   const rg = ctx.createGain(); rg.gain.value = 0; rg.connect(master);
   const rumbleOsc = ctx.createOscillator(); rumbleOsc.type = 'square'; rumbleOsc.frequency.value = 34;
   rumbleOsc.connect(rg); rumbleOsc.start();
-  audio = { ctx, master, lp, eg, o1, o2, o3, squeal, wind, rg, buf, lastThrottle: 0 };
+  audio = { ctx, master, lp, eg, o1, o2, o3, squeal, wind, hiss, rg, buf, lastThrottle: 0 };
 }
 function beep(freq, dur = 0.18, type = 'square', vol = 0.25) {
   if (!audio) return;
@@ -478,6 +482,17 @@ function burst(freq, dur, vol, delay = 0, type = 'lowpass') {
   src.connect(f); f.connect(g); g.connect(master);
   src.start(t, Math.random()); src.stop(t + dur);
 }
+function nitroWhoosh() {
+  if (!audio) return;
+  const { ctx, master, buf } = audio, t = ctx.currentTime;
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.2;
+  f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(3500, t + 0.45);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.001, t); g.gain.exponentialRampToValueAtTime(0.9, t + 0.06); g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+  src.connect(f); f.connect(g); g.connect(master); src.start(t); src.stop(t + 0.75);
+  burst(90, 0.35, 0.9);
+}
 const crash = (v = 1) => { burst(500, 0.35, 0.7 * v); burst(120, 0.25, 0.8 * v); };
 const backfire = () => { const n = 2 + (Math.random() * 3 | 0); for (let i = 0; i < n; i++) burst(380, 0.07, 0.55, i * (0.06 + Math.random() * 0.05)); };
 function toggleMute() {
@@ -494,11 +509,12 @@ function updateAudio(ctl, fx) {
   a.o3.frequency.setTargetAtTime(f * 0.5, t, 0.02);
   const thr = ctl.throttle;
   a.lp.frequency.setTargetAtTime(250 + rn * 2400 * (0.45 + 0.55 * thr), t, 0.03);
-  a.eg.gain.setTargetAtTime((0.05 + 0.08 * thr + 0.04 * rn) * (v.shiftT > 0 ? 0.35 : 1), t, 0.03);
+  a.eg.gain.setTargetAtTime((0.05 + 0.08 * thr + 0.04 * rn + 0.04 * boostFx) * (v.shiftT > 0 ? 0.35 : 1), t, 0.03);
   a.squeal.g.gain.setTargetAtTime(fx.squeal * 0.22, t, 0.05);
   a.squeal.f.frequency.setTargetAtTime(1300 + fx.squeal * 500, t, 0.1);
   const sp = Math.abs(player.fwd) / REF_SPEED;
-  a.wind.g.gain.setTargetAtTime(Math.min(1, sp * sp) * 0.14, t, 0.1);
+  a.wind.g.gain.setTargetAtTime(Math.min(1, sp * sp) * 0.14 + boostFx * 0.06, t, 0.1);
+  a.hiss.g.gain.setTargetAtTime(boostFx * 0.16, t, 0.05);
   a.rg.gain.setTargetAtTime(fx.curb ? 0.08 : 0, t, 0.03);
   if (a.lastThrottle > 0.6 && thr < 0.1 && rpm > 5200) backfire();
   if (v.shifted) { v.shifted = 0; if (Math.random() < 0.5) backfire(); }
@@ -507,6 +523,7 @@ function updateAudio(ctl, fx) {
 
 // ================= 遊戲狀態 =================
 let state = 'menu', paused = false, cdTime = 0, raceTime = 0, lapStart = 0, bestLap = Infinity;
+let boostFx = 0, boostKick = 0, wasBoosting = false;
 let camMode = 0, camH = 0, nitro = 50, wrongWay = 0, shake = 0, menuAngle = 0, lastCd = -1;
 let difficulty = 'normal', playerColor = COLORS[0], resultsTimer = -1, curbTimer = 0;
 try { bestLap = parseFloat(localStorage.getItem(BEST_KEY)) || Infinity; } catch { /* 無 storage */ }
@@ -550,6 +567,7 @@ function startRace() {
   player.color = playerColor;
   placeOnGrid();
   skids.clear();
+  boostFx = boostKick = 0; wasBoosting = false;
   nitro = 50; raceTime = 0; lapStart = 0; wrongWay = 0; lastCd = -1; resultsTimer = -1;
   cdTime = 3.6; state = 'countdown'; paused = false;
   camH = player.h; camInit = false;
@@ -589,7 +607,9 @@ function updatePlayer(dt, ctl) {
   const c = player, v = c.veh;
   const surf = surfaceOf(lateral(c));
   const boosting = ctl.nitro && nitro > 0 && v.u > 5;
-  if (boosting) nitro = Math.max(0, nitro - 26 * dt);
+  if (boosting) nitro = Math.max(0, nitro - 30 * dt);
+  if (boosting && !wasBoosting) { boostKick = 1; nitroWhoosh(); rumble(0.7, 0.9, 350); }
+  wasBoosting = boosting;
   const pc = { throttle: boosting ? 1 : ctl.throttle, brake: ctl.brake, steer: ctl.steer, hand: ctl.hand, boost: boosting };
   for (let i = 0; i < SUBSTEPS; i++) v.step(dt / SUBSTEPS, pc, surf);
 
@@ -804,8 +824,9 @@ function syncModel(c, dt) {
   m.tail.emissiveIntensity = c.braking ? 4 : 0.6;
   for (const f of m.flames) {
     f.visible = c.boosting;
-    if (c.boosting) f.scale.set(1, 1, 0.7 + Math.random() * 0.7);
+    if (c.boosting) { const k = 1.2 + Math.random() * 0.4; f.scale.set(k, k, 1.4 + Math.random() * 1.2); }
   }
+  if (m.boostLight) m.boostLight.intensity = c.boosting ? 25 + Math.random() * 20 : 0;
 }
 
 // ================= 相機 =================
@@ -821,7 +842,7 @@ function updateCamera(dt) {
   const fx = Math.sin(camH), fz = Math.cos(camH);
   if (camMode < 2) {
     const far = camMode === 1;
-    const dist = (far ? 13 : 6.6) + sf * 1.2, hgt = (far ? 4.8 : 2.45) + sf * 0.25;
+    const dist = (far ? 13 : 6.6) + sf * 1.2 + boostKick * 2.2, hgt = (far ? 4.8 : 2.45) + sf * 0.25 - boostKick * 0.3;
     camWant.set(c.pos.x - fx * dist, hgt, c.pos.z - fz * dist);
     if (!camInit) { camPos.copy(camWant); camInit = true; }
     camPos.lerp(camWant, 1 - Math.exp(-16 * dt));
@@ -833,21 +854,25 @@ function updateCamera(dt) {
     camera.lookAt(c.pos.x + hx * 30, 1.0, c.pos.z + hz * 30);
     camera.rotateZ(-c.roll * 0.6);
   }
-  const vib = shake + Math.max(0, sf - 0.75) * 0.06 + (c.boosting ? 0.05 : 0);
+  boostFx += ((c.boosting ? 1 : 0) - boostFx) * Math.min(1, (c.boosting ? 6 : 2.5) * dt);
+  boostKick = Math.max(0, boostKick - dt * 1.6);
+  const vib = shake + Math.max(0, sf - 0.75) * 0.06 + boostFx * 0.1 + boostKick * 0.25;
   if (vib > 0) {
     camera.position.x += (Math.random() - 0.5) * vib * 0.5;
     camera.position.y += (Math.random() - 0.5) * vib * 0.5;
     shake = Math.max(0, shake - dt * 2.5);
   }
-  const fov = 58 + sf * 15 + (c.boosting ? 9 : 0);
+  const fov = 58 + sf * 15 + boostFx * 16;
   if (Math.abs(camera.fov - fov) > 0.05) {
     camera.fov += (fov - camera.fov) * Math.min(1, 4 * dt);
     camera.updateProjectionMatrix();
   }
   const su = post.speed.uniforms;
-  const blur = clamp((sf - 0.5) * 1.6, 0, 1) * 0.8 + (c.boosting ? 0.6 : 0);
-  su.amount.value += (blur - su.amount.value) * Math.min(1, 4 * dt);
-  su.aberration.value = c.boosting ? 0.3 : 0.05;
+  const blur = clamp((sf - 0.5) * 1.6, 0, 1) * 0.8 + boostFx * 1.1;
+  su.amount.value += (blur - su.amount.value) * Math.min(1, 6 * dt);
+  su.aberration.value = 0.05 + boostFx * 0.45;
+  document.body.classList.toggle('boosting', c.boosting);
+  $('boostfx').style.opacity = (boostFx * 0.9).toFixed(2);
   sun.position.copy(c.pos).add(SUN_OFF);
   sun.target.position.copy(c.pos);
 }
@@ -1007,7 +1032,8 @@ $('menuBtn').onclick = () => {
   $('results').classList.add('hidden');
   $('hud').classList.add('hidden');
   $('menu').classList.remove('hidden');
-  if (audio) { audio.eg.gain.value = 0; audio.wind.g.gain.value = 0; audio.squeal.g.gain.value = 0; }
+  if (audio) { audio.eg.gain.value = 0; audio.wind.g.gain.value = 0; audio.squeal.g.gain.value = 0; audio.hiss.g.gain.value = 0; }
+  document.body.classList.remove('boosting'); $('boostfx').style.opacity = 0;
 };
 
 applyQuality();

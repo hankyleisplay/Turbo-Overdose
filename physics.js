@@ -21,6 +21,7 @@ export const SPEC = {
   maxRpm: 8200,
   peakTorque: 730,
   steerMax: 0.58,
+  nitroThrust: 8500,   // 氮氣推力（N），不經過輪胎、直接推車身
   pacB: 9, pacC: 1.45, // 輪胎曲線：約 10° 打滑角時抓地力最高，之後緩降
 };
 
@@ -102,7 +103,7 @@ export class Vehicle {
       const rpm = Math.min(s.maxRpm, Math.max(wheelRpm, clutchRpm, s.idleRpm));
       this.rpm += (rpm - this.rpm) * Math.min(1, 20 * dt);
       if (this.shiftT <= 0 && this.rpm < s.maxRpm - 50) {
-        Fdrive = ctl.throttle * torqueCurve(this.rpm, s) * (ctl.boost ? 1.55 : 1) * ratio() / s.wheelR * 0.9;
+        Fdrive = ctl.throttle * torqueCurve(this.rpm, s) * (ctl.boost ? 1.2 : 1) * ratio() / s.wheelR * 0.9;
       }
     }
 
@@ -145,6 +146,7 @@ export class Vehicle {
     // ---- 合力 ----
     const cd = Math.cos(d), sd = Math.sin(d);
     let Fx = FxR + FxF * cd - FyF * sd - s.drag * u * Math.abs(u) - (s.rolling + surf.drag) * u;
+    if (ctl.boost && u > 0) Fx += s.nitroThrust * Math.max(0.25, 1 - u / 120);
     const Fy = FyR + FyF * cd + FxF * sd;
     let Tz = s.a * (FyF * cd + FxF * sd) - s.b * FyR;
 
