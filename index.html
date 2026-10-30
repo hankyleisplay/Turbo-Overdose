@@ -35,6 +35,7 @@
     <div id="nitro"><div id="nitrofill"></div></div>
     <div class="nlabel">NITRO</div>
   </div>
+  <div id="trackname"></div>
   <div id="center"></div>
   <div id="warn"></div>
 </div>
@@ -54,25 +55,80 @@
 
 <div id="menu" class="screen">
   <div class="card">
+    <div class="wallet">💰 <span class="money"></span></div>
     <h1>TURBO<br><span>OVERDOSE</span></h1>
-    <p class="sub">3D 街頭賽車 · 3 圈決勝負</p>
-    <div class="row"><div class="rlabel">車色</div><div id="colors" class="choices"></div></div>
-    <div class="row"><div class="rlabel">難度</div>
+    <p class="sub">3D 街頭賽車</p>
+    <div class="menubtns">
+      <button id="btnCareer" class="go big">生涯錦標賽</button>
+      <button id="btnQuick" class="big">快速比賽</button>
+      <button id="btnTT" class="big">計時賽</button>
+      <button id="btnGarage" class="big">車庫</button>
+      <button id="btnSettings">設定與操作說明</button>
+    </div>
+  </div>
+</div>
+
+<div id="setup" class="screen hidden">
+  <div class="card wide">
+    <h2 id="setupTitle">快速比賽</h2>
+    <p class="sub" id="setupHint"></p>
+    <div id="trackList" class="tracklist"></div>
+    <div class="row" id="setupDiffRow"><div class="rlabel">難度</div>
       <div id="diffs" class="choices">
         <button data-d="easy">簡單</button><button data-d="normal" class="on">普通</button><button data-d="hard">困難</button>
       </div>
     </div>
+    <div class="btns">
+      <button id="setupStart" class="go">開始</button>
+      <button data-back>返回</button>
+    </div>
+  </div>
+</div>
+
+<div id="career" class="screen hidden">
+  <div class="card wide">
+    <div class="wallet">💰 <span class="money"></span></div>
+    <h2>生涯錦標賽</h2>
+    <p class="sub">每個盃賽 3 場，依名次拿積分（10 / 8 / 6 / 4 / 3 / 2）。拿下總冠軍才能解鎖下一個盃賽。</p>
+    <div id="cupList" class="cuplist"></div>
+    <div class="btns"><button data-back>返回</button></div>
+  </div>
+</div>
+
+<div id="garage" class="screen side hidden">
+  <div class="card panel">
+    <div class="wallet">💰 <span class="money"></span></div>
+    <h2>車庫</h2>
+    <div id="carList" class="carlist"></div>
+    <div id="carInfo"></div>
+    <div class="row left"><div class="rlabel">顏色</div><div id="garageColors" class="choices"></div></div>
+    <h4>改裝</h4>
+    <div id="upgradeList"></div>
+    <div class="btns">
+      <button id="garageAction" class="go">使用中</button>
+      <button data-back>返回</button>
+    </div>
+  </div>
+</div>
+
+<div id="settings" class="screen hidden">
+  <div class="card">
+    <h2>設定</h2>
     <div class="row"><div class="rlabel">畫質</div>
       <div id="quals" class="choices">
         <button data-q="low">低</button><button data-q="medium">中</button><button data-q="high">高</button>
       </div>
     </div>
-    <button id="startBtn" class="go">開始比賽</button>
+    <div class="row"><button id="muteBtn">音效：開</button></div>
     <div class="help">
       <b>W / ↑</b> 油門　<b>S / ↓</b> 煞車/倒車　<b>A D / ← →</b> 轉向<br>
       <b>空白鍵</b> 甩尾（集氮氣）　<b>Shift</b> 氮氣加速　<b>R</b> 回到賽道<br>
       <b>C</b> 切換視角　<b>M</b> 靜音　<b>P / Esc</b> 暫停<br>
       🎮 搖桿：<b>RT</b> 油門　<b>LT</b> 煞車　<b>左搖桿</b> 轉向　<b>A</b> 氮氣　<b>B / X</b> 甩尾　<b>Y</b> 視角
+    </div>
+    <div class="btns">
+      <button data-back class="go">返回</button>
+      <button id="resetBtn" class="danger">清除進度</button>
     </div>
   </div>
 </div>
@@ -80,10 +136,20 @@
 <div id="results" class="screen hidden">
   <div class="card">
     <h2 id="resTitle">比賽結果</h2>
+    <p class="sub" id="resSub"></p>
     <table id="resTable"></table>
-    <div class="btns">
-      <button id="againBtn" class="go">再賽一場</button>
-      <button id="menuBtn">回主選單</button>
+    <div id="resNotes" class="notes"></div>
+    <div class="btns" id="resBtns"></div>
+  </div>
+</div>
+
+<div id="pausemenu" class="screen hidden">
+  <div class="card small">
+    <h2>暫停</h2>
+    <div class="menubtns">
+      <button id="resumeBtn" class="go">繼續</button>
+      <button id="restartBtn">重新開始</button>
+      <button id="quitBtn">回主選單</button>
     </div>
   </div>
 </div>

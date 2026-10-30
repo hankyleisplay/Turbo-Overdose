@@ -1,19 +1,22 @@
 import * as THREE from 'three';
 import { Vehicle, SPEC, corneringSpeed } from './physics.js';
-import { makeCar, WHEEL_R } from './car.js';
-import { setupSky, setupPost, SkidMarks, Sparks, Smoke } from './fx.js';
+import { makeCar, makeGhost, WHEEL_R } from './car.js';
+import { SkySystem, setupPost, SkidMarks, Sparks, Smoke } from './fx.js';
+import { TRACKS, trackById, buildWorld, HALF, CURB, WALL, N, ROAD_Y } from './tracks.js';
+import {
+  CARS, carById, UPGRADES, MAX_LEVEL, upgradeCost, buildSpec, CUPS, POINTS, PRIZE, DIFF_PAY, DIFF_NAME, TT_REWARD,
+  loadProfile, saveProfile, loadGhost, saveGhost
+} from './data.js';
 
 // ================= 基本設定 =================
 const LAPS = 3;
-const ROAD_W = 18, HALF = ROAD_W / 2, CURB = 1.6, WALL = HALF + 9;
-const N = 1400;                 // 賽道取樣點數
 const CAR_R = 1.6;              // 碰撞半徑
 const REF_SPEED = 80;           // 用於速度感效果的參考速度 (m/s)
-const COLORS = [0xd81e1e, 0x1f6dff, 0xffbf00, 0x18b85a, 0x9b3dff, 0xff6a10];
+const COLORS = [0xd81e1e, 0x1f6dff, 0xffbf00, 0x18b85a, 0x9b3dff, 0xff6a10, 0xf2f2f2, 0x1b1d22];
 const AI_NAMES = ['Blaze', 'Nova', 'Viper', 'Ghost', 'Rocket'];
 const AI_SKILL = [0.97, 0.94, 1.0, 0.91, 0.96];
+const AI_STYLES = ['blade', 'muscle', 'hyper', 'gt', 'blade'];
 const DIFF = { easy: 0.82, normal: 0.9, hard: 0.98 };
-const BEST_KEY = 'turbo-overdose-best';
 const QUALITY_KEY = 'turbo-overdose-quality';
 
 const $ = id => document.getElementById(id);
@@ -23,6 +26,7 @@ const fmt = t => {
   const m = Math.floor(t / 60), s = t - m * 60;
   return `${m}:${s < 10 ? '0' : ''}${s.toFixed(2)}`;
 };
+const money = n => '$' + Math.round(n).toLocaleString('en-US');
 
 // ================= Renderer / Scene =================
 const renderer = new THREE.WebGLRenderer({ canvas: $('game'), antialias: true, powerPreference: 'high-performance' });
@@ -36,10 +40,10 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x9fbbd8, 500, 2600);
 const camera = new THREE.PerspectiveCamera(60, 1, 0.3, 5000);
 
-// 燈光：太陽 + 天空環境光
-const SUN_DIR = new THREE.Vector3(0.45, 0.42, 0.3).normalize();
-const SUN_OFF = SUN_DIR.clone().multiplyScalar(300);
-scene.add(new THREE.HemisphereLight(0xbfd9ff, 0x3a5228, 0.7));
+// 燈光：太陽 + 天空環境光（顏色與角度依賽道主題切換）
+const SUN_OFF = new THREE.Vector3(135, 125, 90);
+const hemi = new THREE.HemisphereLight(0xbfd9ff, 0x3a5228, 0.7);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d8, 4.4);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -47,7 +51,7 @@ Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, n
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
-const sky = setupSky(renderer, scene, SUN_DIR);
+const skySys = new SkySystem(renderer, scene);
 
 // 畫質設定
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -75,254 +79,47 @@ function resize() {
 }
 addEventListener('resize', resize);
 
-// ================= 貼圖 =================
-function canvasTex(w, h, draw, repeat) {
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  if (repeat) t.repeat.set(repeat, repeat);
-  return t;
-}
-function noise(g, w, h, base, spread, n) {
-  g.fillStyle = base; g.fillRect(0, 0, w, h);
-  for (let i = 0; i < n; i++) {
-    const [r, gg, b] = spread();
-    g.fillStyle = `rgb(${r},${gg},${b})`;
-    g.fillRect(Math.random() * w, Math.random() * h, 2, 2);
-  }
-}
-const roadTex = canvasTex(256, 512, (g, w, h) => {
-  noise(g, w, h, '#3b3e44', () => { const v = 48 + Math.random() * 36 | 0; return [v, v, v + 4]; }, 9000);
-  g.fillStyle = '#eeeeee';
-  g.fillRect(8, 0, 7, h); g.fillRect(w - 15, 0, 7, h);
-  g.fillStyle = '#f5d33a';
-  g.fillRect(w / 2 - 4, 0, 8, h * 0.5);
-});
-const curbTex = canvasTex(32, 64, (g, w, h) => {
-  g.fillStyle = '#d42020'; g.fillRect(0, 0, w, h / 2);
-  g.fillStyle = '#f4f4f4'; g.fillRect(0, h / 2, w, h / 2);
-});
-const wallTex = canvasTex(64, 64, (g, w, h) => {
-  g.fillStyle = '#f4f4f4'; g.fillRect(0, 0, w, h);
-  g.fillStyle = '#1f5fd0'; g.fillRect(0, 0, w, h / 2);
-  g.fillStyle = '#222'; g.fillRect(0, 0, 6, h); g.fillRect(w - 6, 0, 6, h);
-});
-const grassTex = canvasTex(256, 256, (g, w, h) =>
-  noise(g, w, h, '#4f8a33', () => [60 + Math.random() * 40 | 0, 110 + Math.random() * 50 | 0, 40 + Math.random() * 25 | 0], 7000), 400);
-const sandTex = canvasTex(128, 128, (g, w, h) =>
-  noise(g, w, h, '#cbb68a', () => { const v = Math.random() * 40 | 0; return [180 + v, 160 + v, 120 + v]; }, 3000));
-const checkerTex = canvasTex(64, 64, (g, w, h) => {
-  for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
-    g.fillStyle = (x + y) % 2 ? '#111' : '#fff';
-    g.fillRect(x * 16, y * 16, 16, 16);
-  }
-});
-
-
-// ================= 賽道 =================
-const CTRL = [
-  [0, 220], [0, 0], [0, -120], [40, -240], [150, -310], [290, -280], [340, -160], [270, -80],
-  [180, -60], [150, 30], [230, 110], [350, 130], [420, 230], [380, 360], [250, 410], [120, 420],
-  [30, 380], [0, 300]
-];
-const curve = new THREE.CatmullRomCurve3(CTRL.map(([x, z]) => new THREE.Vector3(x, 0, z)), true, 'centripetal');
-const P = curve.getSpacedPoints(N); P.pop();
-const L = curve.getLength(), ds = L / N;
-const T = [], NR = [];
-for (let i = 0; i < N; i++) {
-  const t = P[(i + 1) % N].clone().sub(P[(i - 1 + N) % N]).normalize();
-  T.push(t);
-  NR.push(new THREE.Vector3(-t.z, 0, t.x)); // 行進方向的右側
-}
-
-
-// AI 速度表：由彎道半徑與車輛抓地力算出過彎極速，再往回推煞車距離
+// ================= 賽道（世界）載入 =================
+let W = null, P, T, NR, L, ds, center;
 const SPEED = new Float32Array(N);
 const AI_BRAKE = 19;
-{
-  const w = 10;
+function loadTrack(id) {
+  if (W && W.def.id === id) return;
+  if (W) { scene.remove(W.group); W.dispose(); }
+  W = buildWorld(trackById(id), renderer);
+  scene.add(W.group);
+  ({ P, T, NR, L, ds, center } = W);
+  const th = W.def.theme;
+  skySys.set(th.sky, W.sunDir, th.envGround);
+  SUN_OFF.copy(W.sunDir).multiplyScalar(300);
+  sun.color.set(th.sun[0]); sun.intensity = th.sun[1];
+  hemi.color.set(th.hemi[0]); hemi.groundColor.set(th.hemi[1]); hemi.intensity = th.hemi[2];
+  scene.fog.color.set(th.fog[0]); scene.fog.near = th.fog[1]; scene.fog.far = th.fog[2];
+  renderer.toneMappingExposure = th.exposure;
+  buildSpeedTable();
+  buildMinimap();
+  skids.clear();
+  if (quality !== 'low') sun.shadow.needsUpdate = true;
+}
+// AI 速度表：由彎道半徑與車輛抓地力算出過彎極速，再往回推煞車距離
+function buildSpeedTable() {
+  const w = 10, spec = { ...SPEC, mu: SPEC.mu * W.grip };
   for (let i = 0; i < N; i++) {
     const a = T[(i - w + N) % N], b = T[(i + w) % N];
     const ang = Math.acos(clamp(a.dot(b), -1, 1));
     const radius = (2 * w * ds) / Math.max(ang, 1e-5);
-    SPEED[i] = Math.min(86, corneringSpeed(radius) * 0.95);
+    SPEED[i] = Math.min(86, corneringSpeed(radius, spec) * 0.95);
   }
   for (let pass = 0; pass < 2; pass++)
     for (let i = N - 1; i >= 0; i--)
-      SPEED[i] = Math.min(SPEED[i], Math.sqrt(SPEED[(i + 1) % N] ** 2 + 2 * AI_BRAKE * ds));
-}
-
-function strip(fn, vRep) {
-  const pos = [], uv = [], idx = [];
-  for (let i = 0; i <= N; i++) {
-    pos.push(...fn(i % N));
-    const v = i * ds / vRep;
-    uv.push(0, v, 1, v);
-    if (i < N) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  return geo;
-}
-const flat = (o1, o2, y, vRep) => strip(k => {
-  const p = P[k], n = NR[k];
-  return [p.x + n.x * o1, y, p.z + n.z * o1, p.x + n.x * o2, y, p.z + n.z * o2];
-}, vRep);
-const wallGeo = (o, h, vRep) => strip(k => {
-  const p = P[k], n = NR[k], x = p.x + n.x * o, z = p.z + n.z * o;
-  return [x, 0, z, x, h, z];
-}, vRep);
-function addMesh(geo, mat, { shadow = false, receive = true } = {}) {
-  const m = new THREE.Mesh(geo, mat);
-  m.castShadow = shadow; m.receiveShadow = receive;
-  scene.add(m);
-  return m;
-}
-
-const ROAD_Y = 0.08;
-addMesh(flat(-HALF, HALF, ROAD_Y, 24), new THREE.MeshStandardMaterial({ map: roadTex, roughness: 0.82, envMapIntensity: 0.5 }));
-const curbMat = new THREE.MeshStandardMaterial({ map: curbTex, roughness: 0.7 });
-addMesh(flat(-HALF - CURB, -HALF, ROAD_Y + 0.02, 4), curbMat);
-addMesh(flat(HALF, HALF + CURB, ROAD_Y + 0.02, 4), curbMat);
-const sandMat = new THREE.MeshStandardMaterial({ map: sandTex, roughness: 1 });
-addMesh(flat(-WALL, -HALF - CURB, 0.04, 10), sandMat);
-addMesh(flat(HALF + CURB, WALL, 0.04, 10), sandMat);
-const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, side: THREE.DoubleSide, roughness: 0.6 });
-addMesh(wallGeo(-WALL, 1.1, 6), wallMat, { shadow: true });
-addMesh(wallGeo(WALL, 1.1, 6), wallMat, { shadow: true });
-
-const grass = addMesh(new THREE.PlaneGeometry(6000, 6000), new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 }));
-grass.rotation.x = -Math.PI / 2;
-
-// 起跑線與拱門
-const startHeading = Math.atan2(T[0].x, T[0].z);
-{
-  const line = addMesh(new THREE.PlaneGeometry(ROAD_W, 3), new THREE.MeshStandardMaterial({ map: checkerTex.clone() }));
-  line.material.map.repeat.set(6, 1);
-  line.material.map.needsUpdate = true;
-  line.geometry.rotateX(-Math.PI / 2);
-  line.position.copy(P[0]).setY(ROAD_Y + 0.03);
-  line.rotation.y = startHeading;
-
-  const gantry = new THREE.Group();
-  const metal = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, metalness: 0.7, roughness: 0.4 });
-  for (const s of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(1, 9, 1), metal);
-    post.position.set(s * (HALF + 3), 4.5, 0); post.castShadow = true;
-    gantry.add(post);
-  }
-  const banner = canvasTex(1024, 128, (g, w, h) => {
-    const gr = g.createLinearGradient(0, 0, w, 0);
-    gr.addColorStop(0, '#ff5a1f'); gr.addColorStop(1, '#ff2d6f');
-    g.fillStyle = gr; g.fillRect(0, 0, w, h);
-    g.font = 'italic 900 84px Arial Black, Arial'; g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText('TURBO OVERDOSE', w / 2, h / 2 + 4);
-  });
-  banner.wrapS = banner.wrapT = THREE.ClampToEdgeWrapping;
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(ROAD_W + 7, 2.4, 0.8),
-    [metal, metal, metal, metal, new THREE.MeshStandardMaterial({ map: banner }), new THREE.MeshStandardMaterial({ map: banner })]);
-  beam.position.y = 9.5; beam.castShadow = true;
-  gantry.add(beam);
-  gantry.position.copy(P[0]);
-  gantry.rotation.y = startHeading + Math.PI; // 讓正面朝向來車
-  scene.add(gantry);
-}
-
-// 看台與觀眾（起跑直線外側）
-{
-  const tierMat = new THREE.MeshStandardMaterial({ color: 0x8a8f99, roughness: 0.9 });
-  const stand = new THREE.Group();
-  const crowd = new THREE.InstancedMesh(new THREE.BoxGeometry(0.7, 1.1, 0.5), new THREE.MeshStandardMaterial({ roughness: 0.8 }), 600);
-  const m = new THREE.Matrix4(), c = new THREE.Color();
-  let n = 0;
-  for (let t = 0; t < 5; t++) {
-    const tier = new THREE.Mesh(new THREE.BoxGeometry(3, 1 + t * 1.2, 100), tierMat);
-    tier.position.set((WALL + 5 + t * 3), (1 + t * 1.2) / 2, 0);
-    tier.castShadow = tier.receiveShadow = true;
-    stand.add(tier);
-    for (let z = -48; z <= 48 && n < 600; z += 0.9) {
-      if (Math.random() < 0.25) continue;
-      m.makeTranslation((WALL + 5 + t * 3) + (Math.random() - 0.5), 1 + t * 1.2 + 0.55, z);
-      crowd.setMatrixAt(n, m);
-      crowd.setColorAt(n, c.setHSL(Math.random(), 0.7, 0.55));
-      n++;
-    }
-  }
-  crowd.count = n;
-  stand.add(crowd);
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(18, 0.5, 104), new THREE.MeshStandardMaterial({ color: 0xff5a1f }));
-  roof.position.set(WALL + 11, 10, 0); roof.castShadow = true;
-  stand.add(roof);
-  stand.position.copy(P[0]);
-  stand.rotation.y = startHeading; // 本地 z 沿賽道方向，本地 +x 為賽道左側（外側）
-  scene.add(stand);
-}
-
-// 樹木
-let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-for (const p of P) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
-const center = new THREE.Vector3((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
-function distToTrack(x, z, step = 5) {
-  let m = Infinity;
-  for (let i = 0; i < N; i += step) { const dx = x - P[i].x, dz = z - P[i].z; m = Math.min(m, dx * dx + dz * dz); }
-  return Math.sqrt(m);
-}
-{
-  const TN = 650;
-  const trunkGeo = new THREE.CylinderGeometry(0.4, 0.6, 3, 6); trunkGeo.translate(0, 1.5, 0);
-  const leafGeo = new THREE.ConeGeometry(3, 8, 7); leafGeo.translate(0, 7, 0);
-  const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshStandardMaterial({ color: 0x6b4a2b }), TN);
-  const leaves = new THREE.InstancedMesh(leafGeo, new THREE.MeshStandardMaterial({ flatShading: true }), TN);
-  trunks.castShadow = leaves.castShadow = true;
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
-  let n = 0, tries = 0;
-  while (n < TN && tries++ < 20000) {
-    const x = minX - 400 + Math.random() * (maxX - minX + 800);
-    const z = minZ - 400 + Math.random() * (maxZ - minZ + 800);
-    if (distToTrack(x, z) < WALL + 8) continue;
-    if (Math.abs(x) < WALL + 40 && Math.abs(z - P[0].z) < 70) continue; // 看台區
-    const k = 0.7 + Math.random() * 1.0;
-    m.compose(p.set(x, 0, z), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, Math.random() * 6.28), s.set(k, k * (0.8 + Math.random() * 0.5), k));
-    trunks.setMatrixAt(n, m); leaves.setMatrixAt(n, m);
-    leaves.setColorAt(n, c.setHSL(0.25 + Math.random() * 0.1, 0.55, 0.22 + Math.random() * 0.15));
-    n++;
-  }
-  trunks.count = leaves.count = n;
-  scene.add(trunks, leaves);
-}
-
-// 遠山
-{
-  const mat = new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 });
-  const snow = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true });
-  for (let i = 0; i < 46; i++) {
-    const a = (i / 46) * Math.PI * 2 + Math.random() * 0.1;
-    const r = 1300 + Math.random() * 350;
-    const h = 180 + Math.random() * 320, rad = 160 + Math.random() * 200;
-    const m = new THREE.Mesh(new THREE.ConeGeometry(rad, h, 6 + (Math.random() * 3 | 0)), mat.clone());
-    m.material.color.setHSL(0.3 + Math.random() * 0.08, 0.2, 0.25 + Math.random() * 0.12);
-    m.position.set(center.x + Math.cos(a) * r, h / 2 - 5, center.z + Math.sin(a) * r);
-    scene.add(m);
-    if (h > 360) {
-      const cap = new THREE.Mesh(new THREE.ConeGeometry(rad * 0.28, h * 0.28, m.geometry.parameters.radialSegments), snow);
-      cap.position.copy(m.position).setY(h - 5 - h * 0.14 + 1);
-      scene.add(cap);
-    }
-  }
+      SPEED[i] = Math.min(SPEED[i], Math.sqrt(SPEED[(i + 1) % N] ** 2 + 2 * AI_BRAKE * W.grip * ds));
 }
 
 // ================= 車輛 =================
 const cars = [];
-function makeEntity(name, color, isPlayer, skill = 1) {
+function makeEntity(name, color, isPlayer, skill = 1, style = 'gt') {
   const e = {
-    name, color, isPlayer, skill, model: makeCar(color),
+    name, color, isPlayer, skill, model: makeCar(color, style),
     pos: new THREE.Vector3(), vel: new THREE.Vector3(), h: 0, fwd: 0, steerVis: 0, ax: 0, ay: 0,
     roll: 0, pitch: 0, braking: false, boosting: false,
     idx: 0, cross: 0, half: true, finished: false, finishTime: Infinity,
@@ -334,10 +131,29 @@ function makeEntity(name, color, isPlayer, skill = 1) {
   return e;
 }
 const player = makeEntity('你', COLORS[0], true);
-player.model.boostLight = new THREE.PointLight(0x55bbff, 0, 9, 2);
-player.model.boostLight.position.set(0, 0.6, -3.2);
-player.model.root.add(player.model.boostLight);
-AI_NAMES.forEach((n, i) => makeEntity(n, COLORS[(i + 1) % COLORS.length], false, AI_SKILL[i]));
+AI_NAMES.forEach((n, i) => makeEntity(n, COLORS[(i + 1) % COLORS.length], false, AI_SKILL[i], AI_STYLES[i]));
+let field = cars;               // 本場參賽的車（計時賽只有玩家）
+
+// 依存檔換上玩家的車款、顏色與改裝
+const prof = loadProfile();
+const playerColor = () => prof.colors[prof.car] ?? COLORS[0];
+function setPlayerCar() {
+  const car = carById(prof.car);
+  if (player.model.style !== car.style) {
+    scene.remove(player.model.root);
+    player.model = makeCar(playerColor(), car.style);
+    scene.add(player.model.root);
+  }
+  if (!player.model.boostLight) {
+    player.model.boostLight = new THREE.PointLight(0x55bbff, 0, 9, 2);
+    player.model.boostLight.position.set(0, 0.6, -3.2);
+    player.model.root.add(player.model.boostLight);
+  }
+  player.color = playerColor();
+  player.model.paint.color.set(player.color);
+  player.veh = new Vehicle(player.pos, player.vel, buildSpec(car.id, prof.upgrades[car.id]));
+  player.veh.reset(player.h);
+}
 
 const skids = new SkidMarks(scene);
 const sparks = new Sparks(scene);
@@ -362,6 +178,10 @@ function nearestIdx(pos, hint, win = 40) {
 }
 const lateral = c => (c.pos.x - P[c.idx].x) * NR[c.idx].x + (c.pos.z - P[c.idx].z) * NR[c.idx].z;
 const progress = c => c.cross * N + (c.ai ? c.s / ds : c.idx);
+
+// 計時賽幽靈車
+let ghost = null, ghostModel = null, ghostRec = [];
+const GHOST_DT = 0.05;
 
 // ================= 輸入（鍵盤 / 觸控 / 搖桿） =================
 const keys = { up: false, down: false, left: false, right: false, hand: false, nitro: false };
@@ -405,9 +225,13 @@ function pollPad() {
   pad.hand = b(2) > 0.5 || b(1) > 0.5;
   pad.nitro = b(0) > 0.5 || b(5) > 0.5;
   const pressed = i => b(i) > 0.5 && !(padPrev[i] > 0.5);
-  const resultsOpen = !$('results').classList.contains('hidden');
-  if (pressed(0) && (state === 'menu' || resultsOpen)) startRace();
-  else if (pressed(9)) { if (state === 'menu' || resultsOpen) startRace(); else togglePause(); }
+  const scr = openScreen();
+  if (pressed(0) || pressed(9)) {
+    if (scr === 'results') $('resBtns').firstChild?.click();
+    else if (scr === 'setup') $('setupStart').click();
+    else if (scr === 'menu') $('btnQuick').click();
+    else if (pressed(9) && !scr) togglePause();
+  }
   if (pressed(3)) camMode = (camMode + 1) % CAM_MODES;
   if (pressed(8)) resetToTrack(player);
   padPrev = gp.buttons.map(x => x.value);
@@ -522,28 +346,31 @@ function updateAudio(ctl, fx) {
 }
 
 // ================= 遊戲狀態 =================
-let state = 'menu', paused = false, cdTime = 0, raceTime = 0, lapStart = 0, bestLap = Infinity;
+let state = 'menu', paused = false, cdTime = 0, raceTime = 0, lapStart = 0, bestLap = Infinity, lapTimes = [];
 let boostFx = 0, boostKick = 0, wasBoosting = false;
 let camMode = 0, camH = 0, nitro = 50, wrongWay = 0, shake = 0, menuAngle = 0, lastCd = -1;
-let difficulty = 'normal', playerColor = COLORS[0], resultsTimer = -1, curbTimer = 0;
-try { bestLap = parseFloat(localStorage.getItem(BEST_KEY)) || Infinity; } catch { /* 無 storage */ }
+let resultsTimer = -1, curbTimer = 0;
+// 本場設定：mode = quick / career / tt
+let session = { mode: 'quick', track: 'valley', diff: 'normal' };
 
 function placeOnGrid() {
-  // 6 台車兩列排開，玩家從最後一位出發
-  const order = [...cars.filter(c => !c.isPlayer), player];
+  // 兩列排開，比賽時玩家從最後一位出發；計時賽玩家單獨在最前面
+  const order = session.mode === 'tt' ? [player] : [...cars.filter(c => !c.isPlayer), player];
+  for (const c of cars) c.model.root.visible = order.includes(c);
   order.forEach((c, k) => {
     c.s = L - 14 - Math.floor(k / 2) * 11;
-    c.offset = c.offsetTarget = k % 2 ? 4.5 : -4.5;
+    c.offset = c.offsetTarget = session.mode === 'tt' ? 0 : k % 2 ? 4.5 : -4.5;
     trackAt(c.s, c.offset, c.pos);
     c.idx = Math.floor(c.s / ds) % N;
     c.h = Math.atan2(T[c.idx].x, T[c.idx].z);
     c.vel.set(0, 0, 0); c.fwd = c.speed = c.steerVis = c.ax = c.ay = 0;
     c.cross = 0; c.half = true; c.finished = false; c.finishTime = Infinity;
     c.ai = !c.isPlayer;
-    c.skillNow = c.skill * DIFF[difficulty];
+    c.skillNow = c.skill * DIFF[session.diff] * (0.97 + Math.random() * 0.06); // 每場狀態略有起伏
     if (c.veh) c.veh.reset(c.h);
     syncModel(c, 0);
   });
+  field = order;
 }
 function resetToTrack(c) {
   if (state !== 'race' || c.finished) return;
@@ -555,33 +382,47 @@ function resetToTrack(c) {
   skids.last.clear();
 }
 
-function startRace() {
+function startRace(sess = session) {
+  session = sess;
   document.activeElement?.blur();
   initAudio();
-  player.model.paint.color.set(playerColor);
+  loadTrack(session.track);
+  setPlayerCar();
+  // AI 避開玩家的顏色
   let ci = 0;
   cars.filter(c => !c.isPlayer).forEach(c => {
-    while (COLORS[ci] === playerColor) ci++;
-    c.color = COLORS[ci]; c.model.paint.color.set(c.color); ci++;
+    while (COLORS[ci] === player.color) ci++;
+    c.color = COLORS[ci % COLORS.length]; c.model.paint.color.set(c.color); ci++;
   });
-  player.color = playerColor;
   placeOnGrid();
   skids.clear();
+  if (ghostModel) { scene.remove(ghostModel.root); ghostModel = null; }
+  ghost = null; ghostRec = [];
+  if (session.mode === 'tt') {
+    ghost = loadGhost(session.track);
+    ghostModel = makeGhost(ghost?.style || carById(prof.car).style);
+    ghostModel.root.visible = false;
+    scene.add(ghostModel.root);
+  }
+  bestLap = prof.best[session.track] ?? Infinity;
+  session.prevBest = bestLap;
+  lapTimes = [];
   boostFx = boostKick = 0; wasBoosting = false;
   nitro = 50; raceTime = 0; lapStart = 0; wrongWay = 0; lastCd = -1; resultsTimer = -1;
   cdTime = 3.6; state = 'countdown'; paused = false;
   camH = player.h; camInit = false;
-  $('menu').classList.add('hidden');
-  $('results').classList.add('hidden');
+  showScreen(null);
   $('hud').classList.remove('hidden');
   $('touch').classList.toggle('hidden', !isTouch);
   $('bestlap').textContent = fmt(bestLap);
+  $('trackname').textContent = trackById(session.track).name + (session.mode === 'tt' ? ' · 計時賽' : session.mode === 'career' ? ' · ' + cupById(session.cup).name + ` 第 ${prof.cup.race + 1} 場` : '');
   showCenter('');
 }
 function togglePause() {
   if (state !== 'race' && state !== 'countdown') return;
   paused = !paused;
   showCenter(paused ? '暫停' : '', true);
+  $('pausemenu').classList.toggle('hidden', !paused);
   if (audio) paused ? audio.ctx.suspend() : audio.ctx.resume();
 }
 let centerTimer = 0;
@@ -598,16 +439,17 @@ const SUBSTEPS = 4;
 
 function surfaceOf(d) {
   const a = Math.abs(d);
-  if (a <= HALF) return { grip: 1, drag: 0, kind: 'road' };
-  if (a <= HALF + CURB) return { grip: 0.95, drag: 0, kind: 'curb' };
-  return { grip: 0.62, drag: 170, kind: 'sand' };
+  const g = W.grip;
+  if (a <= HALF) return { grip: g, drag: 0, kind: 'road' };
+  if (a <= HALF + CURB) return { grip: 0.95 * g, drag: 0, kind: 'curb' };
+  return { grip: 0.62 * g, drag: 170, kind: 'sand' };
 }
 
 function updatePlayer(dt, ctl) {
   const c = player, v = c.veh;
   const surf = surfaceOf(lateral(c));
   const boosting = ctl.nitro && nitro > 0 && v.u > 5;
-  if (boosting) nitro = Math.max(0, nitro - 30 * dt);
+  if (boosting) nitro = Math.max(0, nitro - v.s.nitroDrain * dt);
   if (boosting && !wasBoosting) { boostKick = 1; nitroWhoosh(); rumble(0.7, 0.9, 350); }
   wasBoosting = boosting;
   const pc = { throttle: boosting ? 1 : ctl.throttle, brake: ctl.brake, steer: ctl.steer, hand: ctl.hand, boost: boosting };
@@ -637,7 +479,7 @@ function updatePlayer(dt, ctl) {
     const s = onRoad ? (k < 2 ? rear : front) : 0;
     skids.add(key, wheel(z, x), tmpF, s, ROAD_Y + 0.015);
     if (onRoad && k < 2 && s > 0.35 && Math.random() < s) smoke.emit(wheel(z, x).setY(0.45), 0xe8e8e8, 1.2, 0.35 + s * 0.3, c.vel);
-    if (!onRoad && k < 2 && Math.abs(v.u) > 6 && Math.random() < 0.6) smoke.emit(wheel(z, x).setY(0.5), 0xb59a6a, 1.6, 0.55, c.vel);
+    if (!onRoad && k < 2 && Math.abs(v.u) > 6 && Math.random() < 0.6) smoke.emit(wheel(z, x).setY(0.5), W.def.theme.runoff[0], 1.6, 0.55, c.vel);
   });
   if (fx.curb && (curbTimer -= dt) <= 0) { curbTimer = 0.12; rumble(0.15, 0.4, 100); shake = Math.max(shake, 0.12); }
   if (drifting && Math.random() < 0.1) rumble(0, 0.25, 80);
@@ -692,14 +534,30 @@ function onCross(c, dir) {
     if (c.isPlayer && state === 'race') {
       if (c.cross >= 2) {
         const lt = raceTime - lapStart;
+        lapTimes.push(lt);
+        let msg = '';
         if (lt < bestLap) {
           bestLap = lt;
-          try { localStorage.setItem(BEST_KEY, String(lt)); } catch { /* 無 storage */ }
+          prof.best[session.track] = lt;
+          saveProfile(prof);
           $('bestlap').textContent = fmt(bestLap);
+          msg = '新紀錄！';
         }
+        // 計時賽：比幽靈車快（或還沒有幽靈車）就把這圈存成新的幽靈車
+        if (session.mode === 'tt' && ghostRec.length > 20 && (!ghost || lt < ghost.time)) {
+          ghost = { time: lt, style: carById(prof.car).style, pts: ghostRec };
+          saveGhost(session.track, ghost);
+          ghostModel.root.removeFromParent();
+          ghostModel = makeGhost(ghost.style);
+          scene.add(ghostModel.root);
+          msg = msg || '超越幽靈車！';
+        }
+        if (msg && c.cross <= LAPS) { showCenter(msg, true, 1.6); beep(1046, 0.25, 'triangle'); }
       }
       lapStart = raceTime;
-      if (c.cross === LAPS) { showCenter('最後一圈！', true, 1.6); beep(880, 0.3); }
+      ghostRec = [];
+      if (centerTimer > 0) { /* 剛顯示紀錄訊息，不蓋掉 */ }
+      else if (c.cross === LAPS) { showCenter('最後一圈！', true, 1.6); beep(880, 0.3); }
       else if (c.cross > 1 && c.cross <= LAPS) { showCenter(`第 ${c.cross} 圈`, true, 1.4); beep(660, 0.2); }
     }
     if (c.cross > LAPS && !c.finished) {
@@ -714,7 +572,7 @@ function onCross(c, dir) {
 
 function finishPlayer() {
   const pos = standings().indexOf(player) + 1;
-  showCenter(pos === 1 ? '冠軍！' : 'FINISH', false, 3);
+  showCenter(session.mode === 'tt' ? 'FINISH' : pos === 1 ? '冠軍！' : 'FINISH', false, 3);
   beep(523, 0.2); setTimeout(() => beep(659, 0.2), 150); setTimeout(() => beep(784, 0.4), 300);
   // 終點後交給自動駕駛
   player.ai = true;
@@ -754,8 +612,8 @@ function collideWalls(c) {
 }
 
 function collideCars() {
-  for (let a = 0; a < cars.length; a++) for (let b = a + 1; b < cars.length; b++) {
-    const A = cars[a], B = cars[b];
+  for (let a = 0; a < field.length; a++) for (let b = a + 1; b < field.length; b++) {
+    const A = field[a], B = field[b];
     const dx = B.pos.x - A.pos.x, dz = B.pos.z - A.pos.z, d2 = dx * dx + dz * dz;
     if (d2 > (CAR_R * 2) ** 2 || d2 < 1e-6) continue;
     const d = Math.sqrt(d2), nx = dx / d, nz = dz / d, over = CAR_R * 2 - d;
@@ -800,7 +658,7 @@ function trackPlayerLap(prevIdx) {
 }
 
 function standings() {
-  return [...cars].sort((a, b) => {
+  return [...field].sort((a, b) => {
     if (a.finished || b.finished) return a.finishTime - b.finishTime;
     return progress(b) - progress(a);
   });
@@ -880,10 +738,13 @@ function updateCamera(dt) {
 // ================= HUD / 小地圖 =================
 const mm = $('minimap'), mctx = mm.getContext('2d');
 const mmLayer = document.createElement('canvas'); mmLayer.width = mmLayer.height = 200;
-const mmScale = 172 / Math.max(maxX - minX, maxZ - minZ);
+let mmScale = 1;
 const mmX = x => 100 + (x - center.x) * mmScale, mmY = z => 100 + (z - center.z) * mmScale;
-{
+function buildMinimap() {
+  const b = W.bounds;
+  mmScale = 172 / Math.max(b.maxX - b.minX, b.maxZ - b.minZ);
   const g = mmLayer.getContext('2d');
+  g.clearRect(0, 0, 200, 200);
   g.lineJoin = g.lineCap = 'round';
   const path = () => { g.beginPath(); P.forEach((p, i) => i ? g.lineTo(mmX(p.x), mmY(p.z)) : g.moveTo(mmX(p.x), mmY(p.z))); g.closePath(); };
   path(); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 9; g.stroke();
@@ -896,7 +757,11 @@ const hex = c => '#' + c.toString(16).padStart(6, '0');
 function drawMinimap() {
   mctx.clearRect(0, 0, 200, 200);
   mctx.drawImage(mmLayer, 0, 0);
-  for (const c of cars) {
+  if (ghostModel?.root.visible) {
+    mctx.fillStyle = 'rgba(102,204,255,0.8)';
+    mctx.beginPath(); mctx.arc(mmX(ghostModel.root.position.x), mmY(ghostModel.root.position.z), 4.5, 0, 7); mctx.fill();
+  }
+  for (const c of field) {
     if (c.isPlayer) continue;
     mctx.fillStyle = hex(c.color);
     mctx.beginPath(); mctx.arc(mmX(c.pos.x), mmY(c.pos.z), 4.5, 0, 7); mctx.fill();
@@ -907,7 +772,7 @@ function drawMinimap() {
 function updateHUD() {
   const order = standings();
   const v = player.veh;
-  $('pos').textContent = `${order.indexOf(player) + 1}/${cars.length}`;
+  $('pos').textContent = session.mode === 'tt' ? '計時' : `${order.indexOf(player) + 1}/${field.length}`;
   $('lap').textContent = `${clamp(player.cross, 1, LAPS)}/${LAPS}`;
   $('time').textContent = fmt(player.finished ? player.finishTime : raceTime);
   $('laptime').textContent = fmt(player.cross >= 1 && !player.finished ? raceTime - lapStart : 0);
@@ -924,12 +789,63 @@ function updateHUD() {
 function showResults() {
   const order = standings();
   const me = order.indexOf(player) + 1;
-  $('resTitle').textContent = me === 1 ? '🏆 冠軍！' : `第 ${me} 名`;
-  $('resTable').innerHTML = order.map((c, i) => {
-    const time = c.finished ? fmt(c.finishTime) : `第 ${clamp(c.cross, 1, LAPS)} 圈`;
-    return `<tr class="${c.isPlayer ? 'me' : ''}"><td>${i + 1}</td><td><span class="dot" style="background:${hex(c.color)}"></span>${c.name}</td><td>${time}</td></tr>`;
-  }).join('') + `<tr><td></td><td>最佳單圈</td><td>${fmt(bestLap)}</td></tr>`;
-  $('results').classList.remove('hidden');
+  const tr = trackById(session.track);
+  const rows = [], notes = [];
+  let earned = 0, buttons;
+  if (session.mode === 'tt') {
+    $('resTitle').textContent = '計時賽結果';
+    lapTimes.forEach((t, i) => rows.push(['', `第 ${i + 1} 圈`, fmt(t), t === Math.min(...lapTimes)]));
+    const prevBest = session.prevBest;
+    if (bestLap < prevBest) {
+      earned = TT_REWARD;
+      notes.push(`🏁 新的最佳單圈 ${fmt(bestLap)}（原紀錄 ${fmt(prevBest)}）`);
+    } else notes.push(`最佳單圈紀錄：${fmt(bestLap)}`);
+    buttons = [['再跑一次', () => startRace(session)], ['回主選單', toMenu]];
+  } else {
+    $('resTitle').textContent = me === 1 ? '🏆 冠軍！' : `第 ${me} 名`;
+    for (const [i, c] of order.entries()) {
+      const time = c.finished ? fmt(c.finishTime) : `第 ${clamp(c.cross, 1, LAPS)} 圈`;
+      rows.push([i + 1, `<span class="dot" style="background:${hex(c.color)}"></span>${c.name}`, time, c.isPlayer]);
+    }
+    earned = PRIZE[me - 1] * DIFF_PAY[session.diff] * (session.mode === 'career' ? 1.2 : 1);
+    notes.push(`最佳單圈：${fmt(bestLap)}`);
+    if (session.mode === 'career') {
+      const cup = cupById(session.cup), st = prof.cup;
+      order.forEach((c, i) => { st.points[c.name] = (st.points[c.name] || 0) + POINTS[i]; });
+      st.race++;
+      const table = cupStandings();
+      const last = st.race >= cup.tracks.length;
+      notes.push(`<b>${cup.name} 積分（${st.race}/${cup.tracks.length}）</b>`);
+      notes.push(table.map(([n, pts], i) => `${i + 1}. ${n === '你' ? '<b class="hl">你</b>' : n} ${pts} 分`).join('　'));
+      if (last) {
+        const won = table[0][0] === '你';
+        if (won) {
+          earned += cup.prize;
+          if (!prof.cupsWon.includes(cup.id)) prof.cupsWon.push(cup.id);
+          notes.push(`🏆 ${cup.name} 總冠軍！獎金 ${money(cup.prize)}`);
+        } else notes.push(`${cup.name} 結束，總排名第 ${table.findIndex(r => r[0] === '你') + 1}。拿下總冠軍才能解鎖下一個盃賽。`);
+        prof.cup = null;
+        buttons = [['回生涯模式', () => { toMenu(); openCareer(); }], ['回主選單', toMenu]];
+      } else {
+        buttons = [['下一場：' + trackById(cup.tracks[st.race]).name, () => startCareerRace()], ['回主選單', toMenu]];
+      }
+    } else {
+      buttons = [['再賽一場', () => startRace(session)], ['回主選單', toMenu]];
+    }
+  }
+  if (earned > 0) notes.unshift(`💰 獎金 <b class="hl">+${money(earned)}</b>`);
+  prof.money += earned;
+  saveProfile(prof);
+  $('resSub').textContent = `${tr.name} · ${session.mode === 'tt' ? '計時賽' : DIFF_NAME[session.diff]}`;
+  $('resTable').innerHTML = rows.map(([a, b, c, me]) => `<tr class="${me ? 'me' : ''}"><td>${a}</td><td>${b}</td><td>${c}</td></tr>`).join('');
+  $('resNotes').innerHTML = notes.map(n => `<div>${n}</div>`).join('');
+  const box = $('resBtns'); box.innerHTML = '';
+  buttons.forEach(([label, fn], i) => {
+    const b = document.createElement('button');
+    b.textContent = label; if (i === 0) b.className = 'go';
+    b.onclick = fn; box.appendChild(b);
+  });
+  showScreen('results');
   $('touch').classList.add('hidden');
 }
 
@@ -943,6 +859,18 @@ function update(dt) {
     camera.lookAt(center);
     sun.position.copy(center).add(SUN_OFF); sun.target.position.copy(center);
     post.speed.uniforms.amount.value = 0;
+    return;
+  }
+  if (state === 'garage') {
+    // 車庫：鏡頭繞著玩家的車轉
+    menuAngle += dt * 0.25;
+    const c = player.pos;
+    camera.position.set(c.x + Math.cos(menuAngle) * 8.5, 2.4, c.z + Math.sin(menuAngle) * 8.5);
+    camera.lookAt(c.x, 0.7, c.z);
+    if (Math.abs(camera.fov - 45) > 0.1) { camera.fov = 45; camera.updateProjectionMatrix(); }
+    sun.position.copy(c).add(SUN_OFF); sun.target.position.copy(c);
+    post.speed.uniforms.amount.value = 0;
+    for (const w of player.model.wheels) w.rotation.x = 0;
     return;
   }
   if (paused) return;
@@ -963,7 +891,7 @@ function update(dt) {
     // 起跑前可以催油
     const v = player.veh;
     v.rpm += (SPEC.idleRpm + ctl.throttle * 6200 - v.rpm) * Math.min(1, 6 * dt);
-    for (const c of cars) syncModel(c, dt);
+    for (const c of field) syncModel(c, dt);
   } else {
     raceTime += dt;
     if (!player.ai) {
@@ -976,10 +904,11 @@ function update(dt) {
     } else {
       player.boosting = player.braking = false;
     }
-    for (const c of cars) if (c.ai) updateAI(c, dt);
+    for (const c of field) if (c.ai) updateAI(c, dt);
     collideCars();
     if (!player.ai) collideWalls(player);
-    for (const c of cars) syncModel(c, dt);
+    for (const c of field) syncModel(c, dt);
+    updateGhost();
     if (resultsTimer > 0 && (resultsTimer -= dt) <= 0) showResults();
   }
   if (centerTimer > 0 && (centerTimer -= dt) <= 0) showCenter('');
@@ -988,6 +917,25 @@ function update(dt) {
   updateCamera(dt);
   updateAudio(player.ai ? NO_INPUT : ctl, fx);
   updateHUD();
+}
+function updateGhost() {
+  if (session.mode !== 'tt') return;
+  const t = raceTime - lapStart;
+  // 錄製本圈
+  if (player.cross >= 1 && !player.finished) {
+    const k = Math.floor(t / GHOST_DT);
+    if (ghostRec.length <= k) ghostRec.push([+player.pos.x.toFixed(2), +player.pos.z.toFixed(2), +player.h.toFixed(3)]);
+  }
+  // 播放最佳圈
+  const show = ghost && player.cross >= 1 && !player.finished && ghost.pts.length > 1;
+  ghostModel.root.visible = !!show;
+  if (!show) return;
+  const f = t / GHOST_DT, i = Math.floor(f);
+  if (i >= ghost.pts.length - 1) { ghostModel.root.visible = false; return; }
+  const a = ghost.pts[i], b = ghost.pts[i + 1], u = f - i;
+  ghostModel.root.position.set(a[0] + (b[0] - a[0]) * u, ROAD_Y, a[1] + (b[1] - a[1]) * u);
+  let dh = b[2] - a[2]; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+  ghostModel.root.rotation.y = a[2] + dh * u;
 }
 function render(dt) {
   if (quality === 'low') renderer.render(scene, camera);
@@ -1000,48 +948,290 @@ function frame() {
   render(dt);
 }
 
-// ================= 選單 =================
-COLORS.forEach((c, i) => {
-  const b = document.createElement('button');
-  b.className = 'swatch' + (i === 0 ? ' on' : '');
-  b.style.background = hex(c);
-  b.onclick = () => {
-    playerColor = c;
-    document.querySelectorAll('#colors button').forEach(x => x.classList.remove('on'));
-    b.classList.add('on');
-    player.model.paint.color.set(c);
-  };
-  $('colors').appendChild(b);
-});
+// ================= 選單與介面 =================
+const SCREENS = ['menu', 'setup', 'career', 'garage', 'settings', 'results'];
+function showScreen(id) {
+  for (const s of SCREENS) $(s).classList.toggle('hidden', s !== id);
+  $('pausemenu').classList.add('hidden');
+  document.querySelectorAll('.money').forEach(e => { e.textContent = money(prof.money); });
+}
+const openScreen = () => SCREENS.find(s => !$(s).classList.contains('hidden'));
+function silenceRace() {
+  if (!audio) return;
+  audio.ctx.resume();
+  for (const g of [audio.eg, audio.wind.g, audio.squeal.g, audio.hiss.g, audio.rg]) g.gain.value = 0;
+}
+function toMenu() {
+  state = 'menu'; paused = false;
+  silenceRace();
+  $('hud').classList.add('hidden'); $('touch').classList.add('hidden');
+  document.body.classList.remove('boosting'); $('boostfx').style.opacity = 0;
+  if (ghostModel) ghostModel.root.visible = false;
+  camera.fov = 60; camera.updateProjectionMatrix();
+  showScreen('menu');
+}
 const choose = (sel, attr, fn) => document.querySelectorAll(sel).forEach(b => b.onclick = () => {
   document.querySelectorAll(sel).forEach(x => x.classList.remove('on'));
   b.classList.add('on');
   fn(b.dataset[attr]);
 });
-choose('#diffs button', 'd', d => { difficulty = d; });
+
+// ---- 主選單 ----
+$('btnCareer').onclick = () => openCareer();
+$('btnQuick').onclick = () => openSetup('quick');
+$('btnTT').onclick = () => openSetup('tt');
+$('btnGarage').onclick = () => openGarage();
+$('btnSettings').onclick = () => showScreen('settings');
+document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => {
+  if (state === 'garage') leaveGarage();
+  showScreen('menu');
+});
+
+// ---- 賽道選擇（快速比賽 / 計時賽） ----
+let setupMode = 'quick', setupTrack = 'valley', setupDiff = 'normal';
+function openSetup(mode) {
+  setupMode = mode;
+  $('setupTitle').textContent = mode === 'tt' ? '計時賽' : '快速比賽';
+  $('setupHint').textContent = mode === 'tt' ? '獨自跑 3 圈，挑戰自己的最佳單圈。破紀錄的那一圈會變成下次的幽靈車，並獲得獎金。' : '和 5 台 AI 跑 3 圈，名次越前面獎金越多，難度越高獎金越多。';
+  $('setupDiffRow').classList.toggle('hidden', mode === 'tt');
+  renderTrackList();
+  showScreen('setup');
+}
+function drawTrackThumb(cv, t) {
+  const g = cv.getContext('2d'), w = cv.width, h = cv.height;
+  const pts = new THREE.CatmullRomCurve3(t.ctrl.map(([x, z]) => new THREE.Vector3(x, 0, z)), true, 'centripetal').getPoints(200);
+  const xs = pts.map(p => p.x), zs = pts.map(p => p.z);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
+  const k = Math.min((w - 16) / (maxX - minX), (h - 16) / (maxZ - minZ));
+  const ox = (w - (maxX - minX) * k) / 2, oz = (h - (maxZ - minZ) * k) / 2;
+  g.fillStyle = t.theme.ground[0]; g.fillRect(0, 0, w, h);
+  g.lineJoin = g.lineCap = 'round';
+  g.beginPath();
+  pts.forEach((p, i) => g[i ? 'lineTo' : 'moveTo'](ox + (p.x - minX) * k, oz + (p.z - minZ) * k));
+  g.closePath();
+  g.strokeStyle = '#fff'; g.lineWidth = 6; g.stroke();
+  g.strokeStyle = '#33363c'; g.lineWidth = 3.5; g.stroke();
+}
+function renderTrackList() {
+  const list = $('trackList');
+  list.innerHTML = '';
+  for (const t of TRACKS) {
+    const b = document.createElement('button');
+    b.className = 'trackcard' + (t.id === setupTrack ? ' on' : '');
+    b.innerHTML = `<canvas width="120" height="90"></canvas><div><b>${t.name}</b><small>${t.desc}</small><small class="best">最佳單圈 ${fmt(prof.best[t.id] ?? Infinity)}${t.theme.grip < 0.9 ? ' · 低抓地' : ''}</small></div>`;
+    drawTrackThumb(b.querySelector('canvas'), t);
+    b.onclick = () => { setupTrack = t.id; renderTrackList(); };
+    list.appendChild(b);
+  }
+}
+choose('#diffs button', 'd', d => { setupDiff = d; });
+$('setupStart').onclick = () => startRace({ mode: setupMode, track: setupTrack, diff: setupMode === 'tt' ? 'normal' : setupDiff });
+
+// ---- 生涯 ----
+const cupById = id => CUPS.find(c => c.id === id);
+const cupStandings = () => Object.entries(prof.cup.points).sort((a, b) => b[1] - a[1]);
+function openCareer() {
+  const list = $('cupList');
+  list.innerHTML = '';
+  for (const cup of CUPS) {
+    const locked = cup.requires && !prof.cupsWon.includes(cup.requires);
+    const won = prof.cupsWon.includes(cup.id);
+    const active = prof.cup?.id === cup.id;
+    const div = document.createElement('div');
+    div.className = 'cupcard' + (locked ? ' locked' : '') + (active ? ' active' : '');
+    div.innerHTML = `<div class="cuphead"><b>${cup.name}</b><span class="tag">${DIFF_NAME[cup.diff]}</span>${won ? '<span class="tag gold">已奪冠</span>' : ''}</div>
+      <small>${cup.tracks.map(id => trackById(id).name).join(' → ')}</small>
+      <small>總冠軍獎金 ${money(cup.prize)}${active ? ` · 進行中：第 ${prof.cup.race + 1} / ${cup.tracks.length} 場` : ''}</small>`;
+    const btn = document.createElement('button');
+    btn.textContent = locked ? `🔒 先拿下${cupById(cup.requires).name}` : active ? '繼續' : prof.cup ? '改跑這個盃賽' : '開始';
+    btn.disabled = !!locked;
+    btn.className = 'small' + (!locked && (active || !prof.cup) ? ' go' : '');
+    btn.onclick = () => {
+      if (!active) prof.cup = { id: cup.id, race: 0, points: {} };
+      saveProfile(prof);
+      startCareerRace();
+    };
+    div.appendChild(btn);
+    list.appendChild(div);
+  }
+  showScreen('career');
+}
+function startCareerRace() {
+  const cup = cupById(prof.cup.id);
+  startRace({ mode: 'career', cup: cup.id, track: cup.tracks[prof.cup.race], diff: cup.diff });
+}
+
+// ---- 車庫 ----
+let garageSel = prof.car;
+const statCache = {};
+function carStats(carId) {
+  const spec = buildSpec(carId, prof.upgrades[carId]);
+  const key = carId + JSON.stringify(prof.upgrades[carId] || {});
+  if (statCache[key]) return statCache[key];
+  const v = new Vehicle(new THREE.Vector3(), new THREE.Vector3(), spec);
+  v.reset(0);
+  let t100 = 0;
+  for (let i = 0; i < 120 * 45; i++) {
+    v.step(1 / 120, { throttle: 1, brake: 0, steer: 0, hand: false, boost: false }, { grip: 1, drag: 0 });
+    if (!t100 && v.u * 3.6 >= 100) t100 = i / 120;
+  }
+  return statCache[key] = { top: v.u * 3.6, t100, grip: spec.mu, nitro: spec.nitroThrust };
+}
+function showcase(carId) {
+  // 把要展示的車放在起跑線前方
+  const saved = prof.car;
+  prof.car = carId;
+  setPlayerCar();
+  prof.car = saved;
+  const i = 40;
+  player.pos.copy(P[i]); player.h = Math.atan2(T[i].x, T[i].z);
+  player.fwd = player.steerVis = player.roll = player.pitch = 0;
+  player.boosting = player.braking = false;
+  syncModel(player, 0);
+}
+function openGarage() {
+  state = 'garage';
+  garageSel = prof.car;
+  showcase(garageSel);
+  renderGarage();
+  showScreen('garage');
+  // 面板在左邊（手機在下方），把畫面往右（上）推，車子才不會被擋住
+  const w = innerWidth, h = innerHeight;
+  if (w > 700) camera.setViewOffset(w, h, -w * 0.2, 0, w, h);
+  else camera.setViewOffset(w, h, 0, h * 0.22, w, h);
+}
+function leaveGarage() {
+  state = 'menu';
+  camera.clearViewOffset();
+  setPlayerCar();
+  placeOnGrid();
+  camera.fov = 60; camera.updateProjectionMatrix();
+}
+function renderGarage() {
+  const car = carById(garageSel), owned = prof.owned.includes(car.id);
+  document.querySelectorAll('.money').forEach(e => { e.textContent = money(prof.money); });
+  $('carList').innerHTML = '';
+  for (const c of CARS) {
+    const b = document.createElement('button');
+    b.className = 'carbtn' + (c.id === garageSel ? ' on' : '');
+    const tag = prof.car === c.id ? '使用中' : prof.owned.includes(c.id) ? '已擁有' : money(c.price);
+    b.innerHTML = `<b>${c.name}</b><small>${tag}</small>`;
+    b.onclick = () => { garageSel = c.id; showcase(c.id); renderGarage(); };
+    $('carList').appendChild(b);
+  }
+  const st = carStats(car.id);
+  const bar = (label, val, text) => `<div class="statrow"><span>${label}</span><div class="bar"><i style="width:${clamp(val, 0.04, 1) * 100}%"></i></div><em>${text}</em></div>`;
+  $('carInfo').innerHTML = `<h3>${car.name}</h3><p>${car.desc}</p>` +
+    bar('極速', (st.top - 220) / 140, Math.round(st.top) + ' km/h') +
+    bar('加速', (4.2 - st.t100) / 2.4, '0-100 ' + st.t100.toFixed(1) + ' 秒') +
+    bar('抓地', (st.grip - 1.8) / 1.0, st.grip.toFixed(2) + ' G') +
+    bar('氮氣', (st.nitro - 7000) / 6000, (st.nitro / 1000).toFixed(1) + ' kN');
+
+  // 顏色
+  $('garageColors').innerHTML = '';
+  COLORS.forEach(col => {
+    const b = document.createElement('button');
+    b.className = 'swatch' + ((prof.colors[car.id] ?? COLORS[0]) === col ? ' on' : '');
+    b.style.background = hex(col);
+    b.onclick = () => {
+      prof.colors[car.id] = col;
+      saveProfile(prof);
+      player.model.paint.color.set(col);
+      renderGarage();
+    };
+    $('garageColors').appendChild(b);
+  });
+
+  // 改裝
+  const ups = prof.upgrades[car.id] || {};
+  $('upgradeList').innerHTML = owned ? '' : '<p class="muted">購買後才能改裝。</p>';
+  if (owned) for (const u of UPGRADES) {
+    const lv = ups[u.id] || 0;
+    const row = document.createElement('div');
+    row.className = 'uprow';
+    row.innerHTML = `<div><b>${u.name}</b><small>${u.desc}</small></div><div class="pips">${'<i class="on"></i>'.repeat(lv)}${'<i></i>'.repeat(MAX_LEVEL - lv)}</div>`;
+    const b = document.createElement('button');
+    b.className = 'small';
+    if (lv >= MAX_LEVEL) { b.textContent = '已滿級'; b.disabled = true; }
+    else {
+      const cost = upgradeCost(car, lv);
+      b.textContent = money(cost);
+      b.disabled = prof.money < cost;
+      b.onclick = () => {
+        prof.money -= cost;
+        prof.upgrades[car.id] = { ...ups, [u.id]: lv + 1 };
+        saveProfile(prof);
+        beep(880, 0.12, 'triangle');
+        showcase(car.id);
+        renderGarage();
+      };
+    }
+    row.appendChild(b);
+    $('upgradeList').appendChild(row);
+  }
+
+  // 購買 / 使用
+  const act = $('garageAction');
+  if (!owned) {
+    act.textContent = `購買 ${money(car.price)}`;
+    act.disabled = prof.money < car.price;
+    act.onclick = () => {
+      prof.money -= car.price;
+      prof.owned.push(car.id);
+      prof.car = car.id;
+      saveProfile(prof);
+      beep(660, 0.15, 'triangle'); setTimeout(() => beep(990, 0.25, 'triangle'), 120);
+      renderGarage();
+    };
+  } else if (prof.car !== car.id) {
+    act.textContent = '使用這台車';
+    act.disabled = false;
+    act.onclick = () => { prof.car = car.id; saveProfile(prof); renderGarage(); };
+  } else {
+    act.textContent = '使用中';
+    act.disabled = true;
+  }
+}
+
+// ---- 設定 ----
 choose('#quals button', 'q', q => {
   quality = q;
   try { localStorage.setItem(QUALITY_KEY, q); } catch { /* 無 storage */ }
   applyQuality();
 });
 document.querySelectorAll('#quals button').forEach(b => b.classList.toggle('on', b.dataset.q === quality));
-$('startBtn').onclick = startRace;
-$('againBtn').onclick = startRace;
-$('menuBtn').onclick = () => {
-  state = 'menu';
-  $('results').classList.add('hidden');
-  $('hud').classList.add('hidden');
-  $('menu').classList.remove('hidden');
-  if (audio) { audio.eg.gain.value = 0; audio.wind.g.gain.value = 0; audio.squeal.g.gain.value = 0; audio.hiss.g.gain.value = 0; }
-  document.body.classList.remove('boosting'); $('boostfx').style.opacity = 0;
+$('muteBtn').onclick = () => { toggleMute(); $('muteBtn').textContent = muted ? '音效：關' : '音效：開'; };
+$('resetBtn').onclick = () => {
+  if (!confirm('確定要清除所有進度（金錢、車輛、改裝、盃賽與紀錄）嗎？')) return;
+  try {
+    localStorage.removeItem('turbo-overdose-profile');
+    for (const t of TRACKS) localStorage.removeItem('turbo-overdose-ghost-' + t.id);
+  } catch { /* 無 storage */ }
+  location.reload();
 };
 
-applyQuality();
+// ---- 暫停選單 ----
+$('resumeBtn').onclick = () => togglePause();
+$('restartBtn').onclick = () => { togglePause(); startRace(session); };
+$('quitBtn').onclick = () => {
+  togglePause();
+  if (session.mode === 'career') saveProfile(prof); // 盃賽進度保留，可從生涯模式繼續
+  toMenu();
+};
+
+// ---- 啟動 ----
+loadTrack('valley');
+setPlayerCar();
 placeOnGrid();
+applyQuality();
+showScreen('menu');
 frame();
 
 // 除錯 / 自動測試用
 window.__game = {
   get state() { return state; }, get nitro() { return nitro; },
-  player, cars, keys, pad, standings, step: update, P, T, NR, SPEED, renderer, render, camera, skids
+  get P() { return P; }, get T() { return T; }, get NR() { return NR; }, get W() { return W; },
+  get session() { return session; }, get field() { return field; }, get ghost() { return ghost; },
+  player, cars, keys, pad, prof, standings, step: update, SPEED, renderer, render, camera, skids,
+  startRace, loadTrack, showScreen, openGarage, toMenu
 };

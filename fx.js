@@ -7,32 +7,37 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 // ================= 天空與環境反射 =================
-export function setupSky(renderer, scene, sunDir) {
-  const sky = new Sky();
-  sky.scale.setScalar(3500);
-  const u = sky.material.uniforms;
-  u.turbidity.value = 2.5;
-  u.rayleigh.value = 2.2;
-  u.mieCoefficient.value = 0.004;
-  u.mieDirectionalG.value = 0.85;
-  u.sunPosition.value.copy(sunDir).multiplyScalar(1000);
-  scene.add(sky);
-
-  // 用天空產生環境貼圖，讓車漆、玻璃有反射
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const envScene = new THREE.Scene();
-  const envSky = new Sky();
-  envSky.scale.setScalar(1000);
-  envSky.material.uniforms.turbidity.value = 2.5;
-  envSky.material.uniforms.rayleigh.value = 2.2;
-  envSky.material.uniforms.sunPosition.value.copy(sunDir).multiplyScalar(1000);
-  envScene.add(envSky);
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(900, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x3d5a2a }));
-  ground.position.y = -5;
-  envScene.add(ground);
-  scene.environment = pmrem.fromScene(envScene, 0.02).texture;
-  scene.environmentIntensity = 0.9;
-  return sky;
+// 每條賽道切換時呼叫 set()，更新天空參數並重新產生環境反射貼圖
+export class SkySystem {
+  constructor(renderer, scene) {
+    this.renderer = renderer; this.scene = scene;
+    this.sky = new Sky();
+    this.sky.scale.setScalar(3500);
+    scene.add(this.sky);
+    this.pmrem = new THREE.PMREMGenerator(renderer);
+    this.envScene = new THREE.Scene();
+    this.envSky = new Sky();
+    this.envSky.scale.setScalar(1000);
+    this.envGround = new THREE.Mesh(new THREE.CircleGeometry(900, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial());
+    this.envGround.position.y = -5;
+    this.envScene.add(this.envSky, this.envGround);
+    this.env = null;
+  }
+  set(sky, sunDir, groundColor) {
+    for (const s of [this.sky, this.envSky]) {
+      const u = s.material.uniforms;
+      u.turbidity.value = sky.turbidity;
+      u.rayleigh.value = sky.rayleigh;
+      u.mieCoefficient.value = 0.004;
+      u.mieDirectionalG.value = 0.85;
+      u.sunPosition.value.copy(sunDir).multiplyScalar(1000);
+    }
+    this.envGround.material.color.set(groundColor);
+    this.env?.dispose();
+    this.env = this.pmrem.fromScene(this.envScene, 0.02);
+    this.scene.environment = this.env.texture;
+    this.scene.environmentIntensity = 0.9;
+  }
 }
 
 // ================= 後製 =================
