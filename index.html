@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Turbo Overdose</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="topleft">
+    <div class="stat big"><span class="label">名次</span><span id="pos">6/6</span></div>
+    <div class="stat"><span class="label">圈數</span><span id="lap">1/3</span></div>
+  </div>
+  <div id="topright">
+    <div class="stat"><span class="label">總時間</span><span id="time">0:00.00</span></div>
+    <div class="stat small"><span class="label">本圈</span><span id="laptime">0:00.00</span></div>
+    <div class="stat small"><span class="label">最佳</span><span id="bestlap">--</span></div>
+  </div>
+  <canvas id="minimap" width="200" height="200"></canvas>
+  <div id="speedo">
+    <div id="speed">0</div><div class="unit">KM/H</div>
+    <div id="nitro"><div id="nitrofill"></div></div>
+    <div class="nlabel">NITRO</div>
+  </div>
+  <div id="center"></div>
+  <div id="warn"></div>
+</div>
+
+<div id="touch" class="hidden">
+  <div class="tgroup left">
+    <button data-k="left">◀</button>
+    <button data-k="right">▶</button>
+  </div>
+  <div class="tgroup right">
+    <button data-k="hand" class="sm">甩尾</button>
+    <button data-k="nitro" class="sm blue">氮氣</button>
+    <button data-k="down">煞車</button>
+    <button data-k="up" class="gas">油門</button>
+  </div>
+</div>
+
+<div id="menu" class="screen">
+  <div class="card">
+    <h1>TURBO<br><span>OVERDOSE</span></h1>
+    <p class="sub">3D 街頭賽車 · 3 圈決勝負</p>
+    <div class="row"><div class="rlabel">車色</div><div id="colors" class="choices"></div></div>
+    <div class="row"><div class="rlabel">難度</div>
+      <div id="diffs" class="choices">
+        <button data-d="easy">簡單</button><button data-d="normal" class="on">普通</button><button data-d="hard">困難</button>
+      </div>
+    </div>
+    <button id="startBtn" class="go">開始比賽</button>
+    <div class="help">
+      <b>W / ↑</b> 油門　<b>S / ↓</b> 煞車/倒車　<b>A D / ← →</b> 轉向<br>
+      <b>空白鍵</b> 甩尾（集氮氣）　<b>Shift</b> 氮氣加速　<b>R</b> 回到賽道<br>
+      <b>C</b> 切換視角　<b>M</b> 靜音　<b>P / Esc</b> 暫停
+    </div>
+  </div>
+</div>
+
+<div id="results" class="screen hidden">
+  <div class="card">
+    <h2 id="resTitle">比賽結果</h2>
+    <table id="resTable"></table>
+    <div class="btns">
+      <button id="againBtn" class="go">再賽一場</button>
+      <button id="menuBtn">回主選單</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="game.js"></script>
+</body>
+</html>
