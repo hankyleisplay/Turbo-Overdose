@@ -89,7 +89,7 @@ export function buildCity(renderer) {
     const x0 = node(bi) + ROAD / 2, x1 = node(bi + 1) - ROAD / 2;
     const z0 = node(bj) + ROAD / 2, z1 = node(bj + 1) - ROAD / 2;
     const dc = Math.hypot(bi + 0.5 - centerI, bj + 0.5 - centerI);
-    blocks.push({ x0, x1, z0, z1, park: Math.random() < 0.12 && dc > 1, dc });
+    blocks.push({ x0, x1, z0, z1, park: Math.random() < 0.12 && dc > 1, dc, buildings: [] });
   }
   const walkTex = canvasTex(renderer, 128, 128, (g, w, h) => {
     speckle(g, w, h, '#a6a39c', 150, 40, 2500);
@@ -153,6 +153,7 @@ export function buildCity(renderer) {
       const sx = 0.8 + Math.random() * 0.2, sz = 0.8 + Math.random() * 0.2;
       m4.compose(p3.set(cx, 0.25, cz), q.identity(), sc.set(sx, 1, sz));
       im.setMatrixAt(im.count, m4);
+      b.buildings.push({ x0: cx - LOT / 2 * sx, x1: cx + LOT / 2 * sx, z0: cz - LOT / 2 * sz, z1: cz + LOT / 2 * sz });
       im.setColorAt(im.count, col.set(PALETTE[Math.random() * PALETTE.length | 0]));
       im.count++;
     }
@@ -212,8 +213,21 @@ export function buildCity(renderer) {
     return out;
   };
 
+  // (x, z) 所在的街區（人行道範圍），不在街區上回傳 null
+  const blockOf = (x, z) => {
+    const bi = Math.floor((x - O) / CELL), bj = Math.floor((z - O) / CELL);
+    if (bi < 0 || bj < 0 || bi >= GRID || bj >= GRID) return null;
+    const b = blocks[bi * GRID + bj];
+    return x >= b.x0 && x <= b.x1 && z >= b.z0 && z <= b.z1 ? b : null;
+  };
+  // 是否在建築物裡（留 margin 公尺的邊）
+  const inBuilding = (x, z, margin = 0) => {
+    const b = blockOf(x, z);
+    return !!b && b.buildings.some(k => x > k.x0 - margin && x < k.x1 + margin && z > k.z0 - margin && z < k.z1 + margin);
+  };
+
   return {
-    def: CITY, group, isCity: true, grip: 1, sunDir,
+    def: CITY, group, isCity: true, blockOf, inBuilding, grip: 1, sunDir,
     center: new THREE.Vector3(0, 0, 0),
     bounds: { minX: -edge, maxX: edge, minZ: -edge, maxZ: edge },
     grid: GRID, cell: CELL, road: ROAD, origin: O, edge, node, blocks, blockAt,

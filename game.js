@@ -5,6 +5,7 @@ import { SkySystem, setupPost, SkidMarks, Sparks, Smoke } from './fx.js';
 import { Music } from './music.js';
 import { connect, onlineAvailable, onlineLocal } from './net.js';
 import { buildCity, CITY } from './city.js';
+import { createOpenWorld } from './openworld.js';
 import { TRACKS, trackById, buildWorld, HALF, CURB, WALL, N, ROAD_Y } from './tracks.js';
 import {
   CARS, carById, UPGRADES, MAX_LEVEL, upgradeCost, buildSpec, CUPS, POINTS, PRIZE, DIFF_PAY, DIFF_NAME, TT_REWARD,
@@ -172,7 +173,7 @@ saveProfile(prof);   // 第一次進遊戲時把隨機產生的暱稱存起來
 const playerColor = () => prof.colors[prof.car] ?? COLORS[0];
 function setPlayerCar() {
   const car = carById(prof.car);
-  if (player.model.style !== car.style) {
+  if (player.model.style !== car.style || player.model.stolen) {
     scene.remove(player.model.root);
     player.model = makeCar(playerColor(), car.style);
     scene.add(player.model.root);
@@ -232,7 +233,8 @@ addEventListener('keydown', e => {
   if (state === 'intro') { introTime = 0; return; }
   if (state === 'replay') { replayKey(e); return; }
   if (photo) { if (e.code === 'Escape' || e.code === 'KeyP') exitPhoto(); return; }
-  if (e.code === 'KeyR') resetToTrack(player);
+  if (e.code === 'KeyR' && !(ow.active && ow.onFoot)) resetToTrack(player);
+  if (e.code === 'KeyF') ow.toggleVehicle();
   if (e.code === 'KeyE') shiftGear(1);
   if (e.code === 'KeyQ') shiftGear(-1);
   if (e.code === 'KeyC') camMode = (camMode + 1) % CAM_MODES;
@@ -307,7 +309,7 @@ function pollPad() {
     else if (scr === 'menu') $('btnQuick').click();
     else if (pressed(9) && !scr) togglePause();
   }
-  if (pressed(3)) camMode = (camMode + 1) % CAM_MODES;
+  if (pressed(3)) { if (ow.active && state === 'race') ow.toggleVehicle(); else camMode = (camMode + 1) % CAM_MODES; }
   if (pressed(8)) resetToTrack(player);
   if (pressed(5)) shiftGear(1);
   if (pressed(4)) shiftGear(-1);
@@ -448,7 +450,7 @@ function updateAudio(ctl, fx) {
   a.o5.frequency.setTargetAtTime(f * 3, t, 0.02);
   const thr = ctl.throttle;
   a.lp.frequency.setTargetAtTime(250 + rn * 2400 * (0.45 + 0.55 * thr), t, 0.03);
-  const cut = v.shiftT > 0 ? 0.35 : v.limiter ? (Math.random() < 0.5 ? 0.3 : 1) : 1;
+  const cut = ow.active && ow.onFoot ? 0.25 : v.shiftT > 0 ? 0.35 : v.limiter ? (Math.random() < 0.5 ? 0.3 : 1) : 1;
   a.eg.gain.setTargetAtTime((0.05 + 0.08 * thr + 0.04 * rn + 0.04 * boostFx) * cut, t, 0.015);
   a.growl.g.gain.setTargetAtTime(thr * (0.04 + rn * 0.08), t, 0.05);
   a.growl.f.frequency.setTargetAtTime(120 + rn * 260, t, 0.05);
@@ -531,7 +533,9 @@ function beginRace(sess = session) {
     c.color = COLORS[ci % COLORS.length]; c.model.paint.color.set(c.color); ci++;
   });
   placeOnGrid();
-  if (session.mode === 'free') spawnTraffic(); else clearTraffic();
+  if (session.mode === 'free') { spawnTraffic(); ow.start(); } else { clearTraffic(); if (ow.active) ow.stop(); }
+  $('touch').classList.toggle('free', session.mode === 'free');
+  $('trackname').classList.toggle('hidden', session.mode === 'free');
   odometer = topSpeed = 0;
   const free = session.mode === 'free';
   $('lblPos').textContent = free ? '模式' : '名次';
@@ -835,7 +839,7 @@ function standings() {
 
 function syncModel(c, dt) {
   const m = c.model;
-  m.root.position.set(c.pos.x, ROAD_Y, c.pos.z);
+  m.root.position.set(c.pos.x, ROAD_Y + (c.lift || 0), c.pos.z);
   m.root.rotation.y = c.h;
   let spin = c.fwd * dt / WHEEL_R;
   for (let i = 0; i < 4; i++) {
@@ -860,6 +864,13 @@ function syncModel(c, dt) {
 let camInit = false;
 const camPos = new THREE.Vector3(), camWant = new THREE.Vector3();
 function updateCamera(dt) {
+  if (ow.active && ow.onFoot) {
+    ow.updateCamera(dt);
+    post.speed.uniforms.amount.value = 0;
+    const t = camera.position;
+    sun.position.set(t.x, 0, t.z).add(SUN_OFF); sun.target.position.set(t.x, 0, t.z);
+    return;
+  }
   const c = player;
   const beta = !c.ai ? c.veh.beta : 0;
   const sf = clamp(Math.abs(c.fwd) / REF_SPEED, 0, 1.3);
@@ -942,6 +953,7 @@ function drawMinimap() {
     mctx.fillStyle = 'rgba(102,204,255,0.8)';
     mctx.beginPath(); mctx.arc(mmX(ghostModel.root.position.x), mmY(ghostModel.root.position.z), 4.5, 0, 7); mctx.fill();
   }
+  if (ow.active) ow.drawMinimap(mctx, mmX, mmY);
   mctx.fillStyle = 'rgba(255,255,255,0.75)';
   for (const e of traffic) { mctx.beginPath(); mctx.arc(mmX(e.pos.x), mmY(e.pos.z), 2.5, 0, 7); mctx.fill(); }
   for (const c of field) {
@@ -1567,16 +1579,17 @@ function trafficTarget(e, out) {
 function spawnTraffic() {
   clearTraffic();
   const n = quality === 'low' ? 7 : 14;
-  for (let k = 0; k < n; k++) {
-    const e = makeEntity('', COLORS[Math.random() * COLORS.length | 0], false, 1, TRAFFIC_STYLES[k % TRAFFIC_STYLES.length], false);
-    let i, j, dir;
-    do {
-      i = Math.random() * (W.grid + 1) | 0; j = Math.random() * (W.grid + 1) | 0; dir = Math.random() * 4 | 0;
-    } while (!inGrid(i + DIRS[dir][0], j + DIRS[dir][1]) || Math.hypot(W.node(i) - player.pos.x, W.node(j) - player.pos.z) < 60);
-    e.tr = { i, j, dir, t: Math.random(), speed: 10 + Math.random() * 7, v: 0, wait: 0 };
-    e.h = trafficTarget(e, e.pos);
-    traffic.push(e);
-  }
+  for (let k = 0; k < n; k++) addTrafficCar(k);
+}
+function addTrafficCar(k = Math.random() * 6 | 0) {
+  const e = makeEntity('', COLORS[Math.random() * COLORS.length | 0], false, 1, TRAFFIC_STYLES[k % TRAFFIC_STYLES.length], false);
+  let i, j, dir;
+  do {
+    i = Math.random() * (W.grid + 1) | 0; j = Math.random() * (W.grid + 1) | 0; dir = Math.random() * 4 | 0;
+  } while (!inGrid(i + DIRS[dir][0], j + DIRS[dir][1]) || Math.hypot(W.node(i) - player.pos.x, W.node(j) - player.pos.z) < 60);
+  e.tr = { i, j, dir, t: Math.random(), speed: 10 + Math.random() * 7, v: 0, wait: 0 };
+  e.h = trafficTarget(e, e.pos);
+  traffic.push(e);
 }
 function updateTraffic(dt) {
   for (const e of traffic) {
@@ -1616,7 +1629,7 @@ function hitResponse(c, nx, nz) {
   c.vel.multiplyScalar(0.86);
   c.veh.r *= 0.4;
   const hit = -vn;
-  if (hit > 3) {
+  if (hit > 3 && c === player) {
     shake = Math.min(1, hit / 25);
     crash(Math.min(1, hit / 20));
     rumble(Math.min(1, hit / 20), 0.6, 220);
@@ -1626,7 +1639,9 @@ function hitResponse(c, nx, nz) {
 }
 function collideCity(c) {
   const R = 1.5;
-  for (const b of W.blockAt(c.pos.x, c.pos.z)) {
+  // 開上人行道時車身墊高
+  c.lift = (c.lift || 0) + ((W.blockOf(c.pos.x, c.pos.z) ? 0.25 : 0) - (c.lift || 0)) * 0.35;
+  for (const blk of W.blockAt(c.pos.x, c.pos.z)) for (const b of blk.buildings) {
     const px = clamp(c.pos.x, b.x0, b.x1), pz = clamp(c.pos.z, b.z0, b.z1);
     const dx = c.pos.x - px, dz = c.pos.z - pz, d = Math.hypot(dx, dz);
     if (d >= R) continue;
@@ -1684,6 +1699,52 @@ function resetCity(c) {
   c.h = h; c.veh.reset(h); c.veh.manual = !!settings.manual; c.fwd = 0;
   skids.last.clear();
 }
+
+// ================= 開放世界整合 =================
+const PARKED = { throttle: 0, brake: 0, steer: 0, hand: true, nitro: false };
+function makeCop() {
+  const e = makeEntity('警車', 0xf2f2f2, false, 1, 'gt', false);
+  const bar = (color, x) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.16, 0.32), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 2 }));
+    m.position.set(x, 1.55, -0.4);
+    e.model.chassis.add(m);
+    return m;
+  };
+  e.model.lightR = bar(0xff2020, 0.3);
+  e.model.lightB = bar(0x2060ff, -0.3);
+  e.veh = new Vehicle(e.pos, e.vel, buildSpec('gt'));
+  return e;
+}
+// 接手另一台車（搶車、上停著的車）
+function takeCar(model, carId, pos, h) {
+  player.model = model;
+  model.stolen = true;
+  if (!model.boostLight) {
+    model.boostLight = new THREE.PointLight(0x55bbff, 0, 9, 2);
+    model.boostLight.position.set(0, 0.6, -3.2);
+    model.root.add(model.boostLight);
+  }
+  applyCarQuality(model);
+  player.color = model.paint.color.getHex();
+  player.pos.copy(pos); player.h = h; player.lift = 0;
+  player.veh = new Vehicle(player.pos, player.vel, buildSpec(carId, prof.upgrades[carId]));
+  player.veh.reset(h);
+  player.veh.manual = !!settings.manual;
+  camH = h;
+}
+const ow = createOpenWorld({
+  scene, camera, player, $, prof,
+  W: () => W, state: () => state, quality: () => quality, traffic: () => traffic, audio: () => audio,
+  makeCop, takeCar, syncModel, collideCity,
+  // 被搶走的車：只從車流名單移除（模型交給玩家繼續用），再補一台新的車流
+  removeTraffic: c => { traffic.splice(traffic.indexOf(c), 1); c.model.root.visible = true; addTrafficCar(); },
+  respawn: () => { const sp = W.spawn; player.pos.set(sp.x, 0, sp.z); player.h = sp.h; player.veh.reset(sp.h); player.veh.manual = !!settings.manual; camH = sp.h; camInit = false; },
+  saveProfile: () => saveProfile(prof),
+  showCenter, toast: msg => toast(msg), beep, crash,
+  shake: v => { shake = Math.max(shake, v); },
+  thump: v => { burst(160, 0.2, 0.55 * v); burst(900, 0.06, 0.2 * v); },
+  door: () => { burst(320, 0.07, 0.3); burst(1400, 0.03, 0.12, 0.07); },
+});
 
 // ================= 手排換檔 =================
 function shiftGear(dir) {
@@ -1766,7 +1827,7 @@ function update(dt) {
     raceTime += dt;
     if (!player.ai) {
       const prev = player.idx;
-      fx = updatePlayer(dt, state === 'race' ? ctl : NO_INPUT);
+      fx = updatePlayer(dt, ow.active && ow.onFoot ? PARKED : state === 'race' ? ctl : NO_INPUT);
       if (W.isCity) collideCity(player);
       else {
         collideWalls(player);
@@ -1779,7 +1840,7 @@ function update(dt) {
     }
     for (const c of field) if (c.ai && !c.net) updateAI(c, dt);
     updateNet(dt);
-    if (W.isCity) { updateTraffic(dt); collideTraffic(); collideCity(player); }
+    if (W.isCity) { updateTraffic(dt); collideTraffic(); collideCity(player); ow.update(dt, state === 'race' ? ctl : NO_INPUT); }
     collideCars();
     if (!player.ai && !W.isCity) collideWalls(player);
     for (const c of field) syncModel(c, dt);
@@ -1792,7 +1853,7 @@ function update(dt) {
   smoke.update(dt);
   sparks.update(dt);
   updateCamera(dt);
-  updateAudio(player.ai ? NO_INPUT : ctl, fx);
+  updateAudio(player.ai || (ow.active && ow.onFoot) ? NO_INPUT : ctl, fx);
   updateHUD();
 }
 function updateGhost() {
@@ -1844,6 +1905,8 @@ function toMenu() { fadeThen(goMenu); }
 function goMenu() {
   state = 'menu'; paused = false; photo = null;
   clearTraffic();
+  ow.stop();
+  $('speedo').classList.remove('hidden');
   $('photohud').classList.add('hidden'); $('replayhud').classList.add('hidden');
   applyFilter('none');
   music?.play('menu');
@@ -2091,6 +2154,7 @@ document.querySelectorAll('#quals button').forEach(b => b.classList.toggle('on',
 document.querySelectorAll('#trans button').forEach(b => b.classList.toggle('on', (b.dataset.t === 'manual') === !!settings.manual));
 choose('#trans button', 't', t => setTransmission(t === 'manual'));
 $('touch').classList.toggle('manual', !!settings.manual);
+$('tdoor').addEventListener('pointerdown', e => { e.preventDefault(); ow.toggleVehicle(); navigator.vibrate?.(15); });
 document.querySelectorAll('#tshift [data-shift]').forEach(b => b.addEventListener('pointerdown', e => {
   e.preventDefault();
   shiftGear(+b.dataset.shift);
@@ -2143,5 +2207,5 @@ window.__game = {
   get session() { return session; }, get field() { return field; }, get ghost() { return ghost; },
   player, cars, keys, pad, prof, standings, step: update, SPEED, renderer, render, camera, skids,
   startRace: beginRace, loadTrack, showScreen, openGarage, toMenu: goMenu, beginGame, enterReplay, enterPhoto, exitPhoto,
-  get rec() { return rec; }, get net() { return net; }, get room() { return room; }, get roomCode() { return roomCode; }, netCars, openOnline, openBoard, get rp() { return rp; }, get music() { return music; }, get audio() { return audio; }, skipIntro() { introTime = 0; }
+  get rec() { return rec; }, get net() { return net; }, get room() { return room; }, get roomCode() { return roomCode; }, netCars, openOnline, openBoard, get rp() { return rp; }, get music() { return music; }, get audio() { return audio; }, ow, get traffic() { return traffic; }, skipIntro() { introTime = 0; }
 };
