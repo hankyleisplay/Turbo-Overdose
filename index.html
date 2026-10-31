@@ -79,15 +79,83 @@
 </div>
 
 <div id="touch" class="hidden">
-  <div class="tgroup left">
-    <button data-k="left">◀</button>
-    <button data-k="right">▶</button>
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <linearGradient id="gMetal" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#e9edf2"/><stop offset=".5" stop-color="#9aa3ad"/><stop offset="1" stop-color="#5d6570"/>
+      </linearGradient>
+      <linearGradient id="gRim" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#3a3f47"/><stop offset="1" stop-color="#15181d"/>
+      </linearGradient>
+      <linearGradient id="gBottle" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#1d6fd6"/><stop offset=".45" stop-color="#5cc8ff"/><stop offset="1" stop-color="#1450a8"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <!-- 方向盤：按住左右拖曳，類比轉向 -->
+  <div id="twheel" class="tctl" aria-label="方向盤">
+    <svg id="twheelSvg" viewBox="0 0 120 120">
+      <circle cx="60" cy="60" r="50" fill="none" stroke="url(#gRim)" stroke-width="14"/>
+      <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/>
+      <circle cx="60" cy="60" r="43" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="1"/>
+      <path d="M53 10.5 A50 50 0 0 1 67 10.5" stroke="#ff5a1f" stroke-width="14" fill="none"/>
+      <path d="M14 58 L44 54 L50 66 L18 70 Z" fill="url(#gRim)" stroke="rgba(255,255,255,.3)"/>
+      <path d="M106 58 L76 54 L70 66 L102 70 Z" fill="url(#gRim)" stroke="rgba(255,255,255,.3)"/>
+      <path d="M52 72 L68 72 L64 106 L56 106 Z" fill="url(#gRim)" stroke="rgba(255,255,255,.3)"/>
+      <circle cx="60" cy="62" r="15" fill="url(#gRim)" stroke="rgba(255,255,255,.45)" stroke-width="1.5"/>
+      <circle cx="60" cy="62" r="6" fill="#ff5a1f"/>
+    </svg>
   </div>
-  <div class="tgroup right">
-    <button data-k="hand" class="sm">甩尾</button>
-    <button data-k="nitro" class="sm blue">氮氣</button>
-    <button data-k="down">煞車</button>
-    <button data-k="up" class="gas">油門</button>
+
+  <div class="tright">
+    <!-- 手煞車拉桿 -->
+    <div class="tctl ticon" data-k="hand" aria-label="手煞車甩尾">
+      <svg viewBox="0 0 64 64">
+        <rect x="14" y="46" width="36" height="9" rx="3" fill="url(#gRim)" stroke="rgba(255,255,255,.35)"/>
+        <g class="lever">
+          <rect x="28" y="14" width="8" height="36" rx="4" fill="url(#gMetal)"/>
+          <rect x="25" y="8" width="14" height="16" rx="7" fill="#2a2f37" stroke="rgba(255,255,255,.4)"/>
+          <circle cx="32" cy="8" r="3.2" fill="#ff5a1f"/>
+        </g>
+      </svg>
+    </div>
+    <!-- 氮氣瓶（外圈顯示剩餘量） -->
+    <div class="tctl ticon" data-k="nitro" id="tnitro" aria-label="氮氣">
+      <svg viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="29" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="4"/>
+        <circle id="tnitroRing" cx="32" cy="32" r="29" fill="none" stroke="#2bd0ff" stroke-width="4" stroke-linecap="round"
+          stroke-dasharray="182.2" stroke-dashoffset="91" transform="rotate(-90 32 32)"/>
+        <rect x="28" y="10" width="8" height="6" rx="1.5" fill="url(#gMetal)"/>
+        <rect x="24" y="14" width="16" height="4" rx="2" fill="#c9d1db"/>
+        <rect x="21" y="17" width="22" height="34" rx="8" fill="url(#gBottle)" stroke="rgba(255,255,255,.5)"/>
+        <rect x="21" y="29" width="22" height="9" fill="rgba(255,255,255,.85)"/>
+        <path d="M27 36.5 v-6 l4 6 v-6 M34 33.5 a2.4 2.4 0 1 0 0.01 0" stroke="#1450a8" stroke-width="1.6" fill="none"/>
+        <rect x="24.5" y="20" width="3" height="27" rx="1.5" fill="rgba(255,255,255,.35)"/>
+      </svg>
+    </div>
+    <!-- 煞車踏板 -->
+    <div class="tctl tpedal brake" data-k="down" aria-label="煞車">
+      <svg viewBox="0 0 90 80">
+        <rect class="pbody" x="4" y="6" width="82" height="68" rx="12" fill="url(#gRim)" stroke="rgba(255,255,255,.4)" stroke-width="2"/>
+        <rect x="10" y="12" width="70" height="56" rx="8" fill="none" stroke="rgba(255,255,255,.12)"/>
+        <g stroke="rgba(255,255,255,.28)" stroke-width="4" stroke-linecap="round">
+          <line x1="20" y1="24" x2="70" y2="24"/><line x1="20" y1="34" x2="70" y2="34"/>
+          <line x1="20" y1="44" x2="70" y2="44"/><line x1="20" y1="54" x2="70" y2="54"/>
+        </g>
+      </svg>
+    </div>
+    <!-- 油門踏板 -->
+    <div class="tctl tpedal gas" data-k="up" aria-label="油門">
+      <svg viewBox="0 0 64 110">
+        <rect class="pbody" x="4" y="4" width="56" height="102" rx="12" fill="url(#gRim)" stroke="rgba(255,255,255,.4)" stroke-width="2"/>
+        <rect x="10" y="10" width="44" height="90" rx="8" fill="none" stroke="rgba(255,255,255,.12)"/>
+        <g stroke="rgba(255,255,255,.28)" stroke-width="4" stroke-linecap="round">
+          <line x1="18" y1="22" x2="46" y2="22"/><line x1="18" y1="34" x2="46" y2="34"/><line x1="18" y1="46" x2="46" y2="46"/>
+          <line x1="18" y1="58" x2="46" y2="58"/><line x1="18" y1="70" x2="46" y2="70"/><line x1="18" y1="82" x2="46" y2="82"/>
+        </g>
+      </svg>
+    </div>
   </div>
 </div>
 

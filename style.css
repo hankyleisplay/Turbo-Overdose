@@ -91,19 +91,6 @@ button.go {
 .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
 
 /* ---------- Touch ---------- */
-#touch { position: fixed; left: 0; right: 0; bottom: 0; height: 0; }
-.tgroup { position: absolute; bottom: 16px; display: flex; gap: 12px; align-items: flex-end; }
-.tgroup.left { left: 16px; }
-.tgroup.right { right: 16px; }
-#touch button {
-  width: 76px; height: 76px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35);
-  background: rgba(255,255,255,.12); color: #fff; font: inherit; font-size: 22px; font-weight: 700;
-  touch-action: none;
-}
-#touch button.sm { width: 58px; height: 58px; font-size: 14px; }
-#touch button.blue { background: rgba(43,208,255,.25); }
-#touch button.gas { width: 88px; height: 88px; background: rgba(46,204,113,.3); }
-#touch button.active { background: rgba(255,255,255,.4); }
 
 @media (max-width: 700px) {
   #minimap { width: 110px; height: 110px; top: 100px; }
@@ -304,7 +291,6 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* ---------- 手機版面 ---------- */
-.tgroup.right { display: grid; grid-template-columns: auto auto; gap: 10px; align-items: end; justify-items: center; }
 #rotatehint {
   position: fixed; left: 50%; top: 45%; transform: translate(-50%, -50%); z-index: 6; pointer-events: none;
   background: rgba(12,18,38,.85); border-radius: 14px; padding: 12px 18px; font-size: 15px; text-align: center;
@@ -317,11 +303,7 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
   .speedrow { justify-content: flex-end; gap: 8px; }
   #nitro, #rpm { width: 120px; margin-left: auto; margin-right: 0; }
   #topright .stat.small { display: none; }
-  #touch button { width: 64px; height: 64px; font-size: 18px; }
-  #touch button.sm { width: 52px; height: 52px; font-size: 13px; }
-  #touch button.gas { width: 76px; height: 76px; }
-  .tgroup.left { gap: 10px; }
-}
+        }
 @media (max-height: 450px) and (min-width: 701px) {
   #minimap { width: 110px; height: 110px; top: 84px; }
   .stat.big span:last-child { font-size: 30px; }
@@ -330,4 +312,41 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
   #gear { font-size: 18px; width: 30px; height: 30px; line-height: 30px; }
   #nitro, #rpm { width: 150px; }
   #center { font-size: 60px; top: 22%; }
+}
+
+/* ---------- 觸控操作（圖像化方向盤、踏板） ---------- */
+#touch { position: fixed; left: 0; right: 0; bottom: 0; height: 0; z-index: 3; }
+.tctl { position: absolute; touch-action: none; -webkit-tap-highlight-color: transparent; user-select: none; }
+.tctl svg { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 4px 10px rgba(0,0,0,.45)); }
+#twheel { left: 18px; bottom: 18px; width: 150px; height: 150px; opacity: .9; }
+#twheelSvg { transition: transform .18s cubic-bezier(.3,1.4,.5,1); }
+#twheel.active #twheelSvg { transition: none; }
+#twheel.active { opacity: 1; }
+.tright { position: absolute; right: 16px; bottom: 16px; width: 214px; height: 220px; }
+.tpedal { bottom: 0; transform-origin: 50% 100%; transition: transform .08s, filter .08s; }
+.tpedal.gas { right: 0; width: 72px; height: 124px; }
+.tpedal.brake { right: 86px; width: 104px; height: 92px; }
+.tpedal.active { transform: perspective(300px) rotateX(18deg) scaleY(.94); }
+.tpedal.gas.active .pbody { fill: rgba(255,120,30,.55); }
+.tpedal.brake.active .pbody { fill: rgba(255,40,40,.55); }
+.tpedal.gas.active svg { filter: drop-shadow(0 0 14px rgba(255,120,30,.9)); }
+.tpedal.brake.active svg { filter: drop-shadow(0 0 14px rgba(255,40,40,.9)); }
+.ticon { width: 66px; height: 66px; border-radius: 50%; background: rgba(12,18,38,.45); border: 1.5px solid rgba(255,255,255,.22); }
+.ticon[data-k="hand"] { right: 112px; bottom: 112px; }
+.ticon[data-k="nitro"] { right: 4px; bottom: 140px; }
+.ticon.active { background: rgba(255,255,255,.18); }
+.ticon[data-k="hand"] .lever { transform-origin: 32px 50px; transition: transform .1s; }
+.ticon[data-k="hand"].active .lever { transform: rotate(-28deg); }
+#tnitro.active svg { filter: drop-shadow(0 0 16px rgba(43,208,255,1)); }
+#tnitro.low #tnitroRing { stroke: #6b7280; }
+#tnitro.low { opacity: .6; }
+#tnitroRing { transition: stroke-dashoffset .2s; }
+
+@media (max-width: 700px) {
+  #twheel { width: 118px; height: 118px; left: 12px; bottom: 14px; }
+  .tright { right: 10px; bottom: 12px; transform: scale(.8); transform-origin: 100% 100%; }
+}
+@media (max-height: 450px) and (min-width: 701px) {
+  #twheel { width: 124px; height: 124px; }
+  .tright { transform: scale(.82); transform-origin: 100% 100%; }
 }

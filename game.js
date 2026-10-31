@@ -238,15 +238,49 @@ addEventListener('keyup', e => { if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = fals
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
 if (isTouch) document.body.classList.add('touch');
-document.querySelectorAll('#touch button').forEach(b => {
+// 觸控：踏板與圖示按住即作用（手指滑出也不會放開），方向盤左右拖曳是類比轉向
+document.querySelectorAll('#touch [data-k]').forEach(b => {
   const k = b.dataset.k;
-  const on = e => { e.preventDefault(); keys[k] = true; b.classList.add('active'); };
+  const on = e => {
+    e.preventDefault();
+    try { b.setPointerCapture(e.pointerId); } catch { /* 有些瀏覽器在手指已離開時會丟錯，不影響操作 */ }
+    keys[k] = true; b.classList.add('active');
+    navigator.vibrate?.(k === 'nitro' ? 25 : 8);
+  };
   const off = e => { e.preventDefault(); keys[k] = false; b.classList.remove('active'); };
   b.addEventListener('pointerdown', on);
   b.addEventListener('pointerup', off);
-  b.addEventListener('pointerleave', off);
   b.addEventListener('pointercancel', off);
+  b.addEventListener('contextmenu', e => e.preventDefault());
 });
+let touchSteer = 0;
+{
+  const wheel = $('twheel'), svg = $('twheelSvg');
+  let id = null;
+  const set = e => {
+    const r = wheel.getBoundingClientRect();
+    if (!r.width) return;
+    const x = clamp((e.clientX - (r.left + r.width / 2)) / (r.width * 0.45), -1, 1);
+    touchSteer = Math.sign(x) * Math.max(0, Math.abs(x) - 0.06) / 0.94;   // 中間留一點死區
+    svg.style.transform = `rotate(${touchSteer * 110}deg)`;
+  };
+  wheel.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    id = e.pointerId;
+    try { wheel.setPointerCapture(id); } catch { /* 同上 */ }
+    wheel.classList.add('active');
+    set(e);
+  });
+  wheel.addEventListener('pointermove', e => { if (e.pointerId === id) set(e); });
+  const end = e => {
+    if (e.pointerId !== id) return;
+    id = null; touchSteer = 0;
+    svg.style.transform = '';
+    wheel.classList.remove('active');
+  };
+  wheel.addEventListener('pointerup', end);
+  wheel.addEventListener('pointercancel', end);
+}
 
 const pad = { throttle: 0, brake: 0, steer: 0, hand: false, nitro: false, gp: null };
 let padPrev = [];
@@ -280,7 +314,7 @@ function readControls() {
   return {
     throttle: Math.max(keys.up ? 1 : 0, pad.throttle),
     brake: Math.max(keys.down ? 1 : 0, pad.brake),
-    steer: clamp((keys.right ? 1 : 0) - (keys.left ? 1 : 0) + pad.steer, -1, 1),
+    steer: clamp((keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (pad.steer || 0) + (touchSteer || 0), -1, 1),
     hand: keys.hand || pad.hand,
     nitro: keys.nitro || pad.nitro,
   };
@@ -542,6 +576,10 @@ function updatePlayer(dt, ctl) {
   wasBoosting = boosting;
   const pc = { throttle: boosting ? 1 : ctl.throttle, brake: ctl.brake, steer: ctl.steer, hand: ctl.hand, boost: boosting };
   for (let i = 0; i < SUBSTEPS; i++) v.step(dt / SUBSTEPS, pc, surf);
+  // 保險：萬一物理數值壞掉（NaN），把車放回賽道，不讓整場比賽卡死
+  if (!Number.isFinite(v.u + v.h + c.pos.x + c.pos.z)) {
+    c.pos.copy(P[c.idx]); v.reset(Math.atan2(T[c.idx].x, T[c.idx].z));
+  }
 
   c.h = v.h; c.fwd = v.u; c.steerVis = v.delta; c.ax = v.ax; c.ay = v.ay;
   c.boosting = boosting; c.braking = ctl.brake > 0.1 && v.u > 1;
@@ -895,6 +933,11 @@ function updateHUD() {
   cls('rpmfill', 'red', rn > 0.9);
   bar('nitrofill', nitro);
   cls('nitro', 'low', nitro < NITRO_START);
+  if (isTouch) {
+    const off = (182.2 * (1 - nitro / 100)).toFixed(1);
+    if (hudCache.ring !== off) { hudCache.ring = off; $('tnitroRing').setAttribute('stroke-dashoffset', off); }
+    cls('tnitro', 'low', nitro < NITRO_START && !player.boosting);
+  }
   if (nitroEmptyFlash > 0) nitroEmptyFlash -= 1 / 60;
   cls('nitro', 'empty', nitroEmptyFlash > 0);
   txt('warn', wrongWay > 1 ? '逆向行駛！' : '');
