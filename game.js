@@ -3,6 +3,7 @@ import { Vehicle, SPEC, corneringSpeed } from './physics.js';
 import { makeCar, makeGhost, WHEEL_R } from './car.js';
 import { SkySystem, setupPost, SkidMarks, Sparks, Smoke } from './fx.js';
 import { Music } from './music.js';
+import { connect, onlineAvailable, onlineLocal } from './net.js';
 import { TRACKS, trackById, buildWorld, HALF, CURB, WALL, N, ROAD_Y } from './tracks.js';
 import {
   CARS, carById, UPGRADES, MAX_LEVEL, upgradeCost, buildSpec, CUPS, POINTS, PRIZE, DIFF_PAY, DIFF_NAME, TT_REWARD,
@@ -118,7 +119,7 @@ function buildSpeedTable() {
 
 // ================= 車輛 =================
 const cars = [];
-function makeEntity(name, color, isPlayer, skill = 1, style = 'gt') {
+function makeEntity(name, color, isPlayer, skill = 1, style = 'gt', register = true) {
   const e = {
     name, color, isPlayer, skill, model: makeCar(color, style),
     pos: new THREE.Vector3(), vel: new THREE.Vector3(), h: 0, fwd: 0, steerVis: 0, ax: 0, ay: 0,
@@ -128,7 +129,7 @@ function makeEntity(name, color, isPlayer, skill = 1, style = 'gt') {
   };
   if (isPlayer) e.veh = new Vehicle(e.pos, e.vel);
   scene.add(e.model.root);
-  cars.push(e);
+  if (register) cars.push(e);
   return e;
 }
 const player = makeEntity('你', COLORS[0], true);
@@ -137,6 +138,7 @@ let field = cars;               // 本場參賽的車（計時賽只有玩家）
 
 // 依存檔換上玩家的車款、顏色與改裝
 const prof = loadProfile();
+saveProfile(prof);   // 第一次進遊戲時把隨機產生的暱稱存起來
 const playerColor = () => prof.colors[prof.car] ?? COLORS[0];
 function setPlayerCar() {
   const car = carById(prof.car);
@@ -391,7 +393,9 @@ let session = { mode: 'quick', track: 'valley', diff: 'normal' };
 
 function placeOnGrid() {
   // 兩列排開，比賽時玩家從最後一位出發；計時賽玩家單獨在最前面
-  const order = session.mode === 'tt' ? [player] : [...cars.filter(c => !c.isPlayer), player];
+  const order = session.mode === 'tt' ? [player]
+    : session.mode === 'online' ? session.grid.map(uid => uid === net.uid ? player : netCars.get(uid)).filter(Boolean)
+    : [...cars.filter(c => !c.isPlayer), player];
   for (const c of cars) c.model.root.visible = order.includes(c);
   order.forEach((c, k) => {
     c.s = L - 14 - Math.floor(k / 2) * 11;
@@ -463,6 +467,7 @@ function beginRace(sess = session) {
 function togglePause() {
   if (state !== 'race' && state !== 'countdown') return;
   paused = !paused;
+  $('restartBtn').classList.toggle('hidden', session.mode === 'online');
   $('pausemenu').classList.toggle('hidden', !paused);
   if (audio) paused ? audio.ctx.suspend() : audio.ctx.resume();
 }
@@ -591,6 +596,7 @@ function onCross(c, dir) {
         if (lt < bestLap) {
           bestLap = lt;
           prof.best[session.track] = lt;
+          submitOnline(session.track, lt);
           saveProfile(prof);
           $('bestlap').textContent = fmt(bestLap);
           msg = '新紀錄！';
@@ -851,6 +857,12 @@ function updateHUD() {
 
 function showResults() {
   if (rec) rec.done = true;
+  if (session.mode === 'online') {
+    renderOnlineResults();
+    showScreen('results');
+    $('touch').classList.add('hidden');
+    return;
+  }
   const order = standings();
   const me = order.indexOf(player) + 1;
   const tr = trackById(session.track);
@@ -950,6 +962,7 @@ function showIntro() {
 }
 function updateIntro(dt) {
   introTime -= dt;
+  if (session.mode === 'online' && (session.startAt - net.serverNow()) / 1000 < 3.3) introTime = Math.min(introTime, 0);
   const k = 1 - Math.max(0, introTime) / INTRO_TIME;
   const e = k * k * (3 - 2 * k);
   const c = player, fx = Math.sin(c.h), fz = Math.cos(c.h);
@@ -1152,6 +1165,240 @@ function savePhoto() {
   beep(1800, 0.05, 'square', 0.15);
 }
 
+// ================= 線上：排行榜與多人連線 =================
+let net = null, room = null, roomCode = null, roomUnsub = null, statesUnsub = null;
+const netCars = new Map();
+let remoteStates = {}, sendTimer = 0, onlineResultsTimer = 0, onlineRewarded = false;
+const tmpN = new THREE.Vector3();
+const isHost = () => !!(room && net && room.host === net.uid);
+const myInfo = () => ({ name: prof.name, car: prof.car, style: carById(prof.car).style, color: playerColor() });
+async function ensureNet() {
+  if (!net) net = await connect();
+  return net;
+}
+let toastTimer = 0;
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+function submitOnline(track, time) {
+  if (!onlineAvailable) return;
+  ensureNet()
+    .then(n => n.submitLap(track, { name: prof.name, time, car: carById(prof.car).name }))
+    .then(ok => { if (ok) toast('🌐 已上傳到線上排行榜'); })
+    .catch(() => {});
+}
+
+// ---- 線上大廳入口 ----
+function openOnline(msg = '') {
+  $('nickInput').value = prof.name;
+  const status = !onlineAvailable
+    ? '線上功能尚未設定：請依照專案裡的 FIREBASE_SETUP.md 建立 Firebase 專案，並把設定貼進 firebase-config.js。'
+    : onlineLocal ? '本機測試模式：同一台電腦開兩個分頁就能互相連線。' : '';
+  $('onlineStatus').textContent = msg || status;
+  for (const id of ['createRoomBtn', 'joinRoomBtn']) $(id).disabled = !onlineAvailable;
+  showScreen('online');
+}
+$('nickInput').onchange = e => {
+  prof.name = e.target.value.trim().slice(0, 12) || prof.name;
+  e.target.value = prof.name;
+  saveProfile(prof);
+};
+async function withBusy(btn, fn) {
+  btn.disabled = true;
+  try { await fn(); } catch (e) { $('onlineStatus').textContent = '⚠ ' + (e.message || e); } finally { btn.disabled = false; }
+}
+$('createRoomBtn').onclick = e => withBusy(e.currentTarget, async () => {
+  $('onlineStatus').textContent = '連線中…';
+  await ensureNet();
+  roomCode = await net.createRoom(myInfo(), 'valley');
+  enterLobby();
+});
+$('joinRoomBtn').onclick = e => withBusy(e.currentTarget, async () => {
+  const code = $('codeInput').value.trim().toUpperCase();
+  if (code.length !== 4) throw new Error('請輸入 4 碼房間代碼');
+  $('onlineStatus').textContent = '連線中…';
+  await ensureNet();
+  await net.joinRoom(code, myInfo());
+  roomCode = code;
+  enterLobby();
+});
+$('codeInput').onkeydown = e => { if (e.key === 'Enter') $('joinRoomBtn').click(); e.stopPropagation(); };
+$('nickInput').onkeydown = e => e.stopPropagation();
+
+// ---- 房間 ----
+function enterLobby() {
+  roomUnsub?.();
+  room = null;
+  showScreen('lobby');
+  roomUnsub = net.onRoom(roomCode, onRoomUpdate);
+}
+function onRoomUpdate(r) {
+  const prev = room;
+  room = r;
+  if (!r) return leaveOnline('房主離開了，房間已解散。');
+  if (!r.players?.[net.uid]) return leaveOnline('你已不在這個房間。');
+  if (openScreen() === 'lobby') renderLobby();
+  if (r.state === 'racing' && (session.mode !== 'online' || session.race !== r.race) && (!prev || prev.state !== 'racing' || prev.race !== r.race)) startOnlineRace();
+}
+const roomPlayers = () => Object.entries(room?.players || {}).sort((a, b) => a[1].joined - b[1].joined);
+function renderLobby() {
+  $('roomCode').textContent = roomCode;
+  $('lobbyPlayers').innerHTML = roomPlayers().map(([uid, p]) =>
+    `<div class="lp"><span class="dot" style="background:${hex(p.color)}"></span><b>${escapeHtml(p.name)}</b>${uid === room.host ? ' 👑' : ''}${uid === net.uid ? ' <span class="hl">（你）</span>' : ''}<small>${carById(p.car).name}</small></div>`
+  ).join('');
+  const host = isHost();
+  $('lobbyTracks').innerHTML = '';
+  for (const t of TRACKS) {
+    const b = document.createElement('button');
+    b.textContent = t.name;
+    b.className = t.id === room.track ? 'on' : '';
+    b.disabled = !host;
+    b.onclick = () => net.updateRoom(roomCode, { track: t.id });
+    $('lobbyTracks').appendChild(b);
+  }
+  const n = roomPlayers().length;
+  $('startOnlineBtn').classList.toggle('hidden', !host);
+  $('startOnlineBtn').textContent = n < 2 ? '開始比賽（目前只有你）' : `開始比賽（${n} 人）`;
+  $('lobbyHint').textContent = host ? '把房間代碼告訴朋友，他們在「線上對戰」輸入代碼就能加入（最多 6 人）。' : '等待房主選擇賽道並開始比賽…';
+}
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+$('startOnlineBtn').onclick = () => net.updateRoom(roomCode, { state: 'racing', startAt: net.serverNow() + 7000, race: (room.race || 0) + 1 });
+$('leaveRoomBtn').onclick = () => leaveOnline();
+async function leaveOnline(msg) {
+  roomUnsub?.(); statesUnsub?.();
+  roomUnsub = statesUnsub = null;
+  const code = roomCode, host = isHost(), inRoom = room?.players?.[net?.uid];
+  roomCode = null; room = null;
+  if (code && inRoom) await net.leaveRoom(code, host).catch(() => {});
+  if (state !== 'menu' && state !== 'garage') { goMenu(); clearNetCars(); }
+  openOnline(msg);
+}
+function clearNetCars() {
+  for (const c of netCars.values()) {
+    scene.remove(c.model.root);
+    c.model.root.traverse(o => { if (o.material?.isMeshPhysicalMaterial) o.material.dispose(); });
+  }
+  netCars.clear();
+  field = cars;
+}
+
+// ---- 線上比賽 ----
+function startOnlineRace() {
+  const order = roomPlayers();
+  for (const c of netCars.values()) scene.remove(c.model.root);
+  netCars.clear();
+  for (const [uid, p] of order) {
+    if (uid === net.uid) continue;
+    const e = makeEntity(p.name, p.color, false, 1, p.style, false);
+    e.net = true; e.uid = uid;
+    netCars.set(uid, e);
+  }
+  remoteStates = {};
+  statesUnsub?.();
+  statesUnsub = net.onStates(roomCode, m => { remoteStates = m; });
+  onlineRewarded = false;
+  startRace({ mode: 'online', track: room.track, diff: 'normal', grid: order.map(([uid]) => uid), startAt: room.startAt, race: room.race });
+}
+function updateNet(dt) {
+  if (session.mode !== 'online' || !net || !roomCode) return;
+  if ((sendTimer -= dt) <= 0) {
+    sendTimer = 1 / 15;
+    const p = player;
+    net.sendState(roomCode, {
+      x: +p.pos.x.toFixed(2), z: +p.pos.z.toFixed(2), h: +p.h.toFixed(3), st: +p.steerVis.toFixed(2), v: +p.fwd.toFixed(1),
+      f: (p.boosting ? 1 : 0) | (p.braking ? 2 : 0), c: p.cross, i: p.idx, fin: p.finished ? +p.finishTime.toFixed(3) : 0, t: net.serverNow()
+    });
+  }
+  const now = net.serverNow(), k = 1 - Math.exp(-12 * dt);
+  for (const [uid, c] of netCars) {
+    const s = remoteStates[uid];
+    if (!s) continue;
+    // 依最後收到的速度往前推算，再平滑靠過去，避免 15Hz 更新造成的頓挫
+    const age = clamp((now - s.t) / 1000, 0, 0.5);
+    tmpN.set(s.x + Math.sin(s.h) * s.v * age, 0, s.z + Math.cos(s.h) * s.v * age);
+    if (c.pos.distanceTo(tmpN) > 15) c.pos.copy(tmpN); else c.pos.lerp(tmpN, k);
+    let dh = s.h - c.h; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    c.h += dh * k;
+    c.vel.set(Math.sin(c.h) * s.v, 0, Math.cos(c.h) * s.v);
+    c.fwd = s.v; c.steerVis = s.st;
+    c.boosting = !!(s.f & 1); c.braking = !!(s.f & 2);
+    c.cross = s.c; c.idx = s.i; c.s = s.i * ds;
+    if (s.fin && !c.finished) { c.finished = true; c.finishTime = s.fin; }
+    c.model.root.visible = now - s.t < 5000;
+  }
+}
+function renderOnlineResults() {
+  const order = standings();
+  const me = order.indexOf(player) + 1;
+  $('resTitle').textContent = me === 1 ? '🏆 冠軍！' : `第 ${me} 名`;
+  $('resSub').textContent = `${trackById(session.track).name} · 線上對戰 · 房間 ${roomCode || ''}`;
+  $('resTable').innerHTML = order.map((c, i) => {
+    const time = c.finished ? fmt(c.finishTime) : '比賽中…';
+    return `<tr class="${c.isPlayer ? 'me' : ''}"><td>${i + 1}</td><td><span class="dot" style="background:${hex(c.color)}"></span>${escapeHtml(c.isPlayer ? prof.name : c.name)}</td><td>${time}</td></tr>`;
+  }).join('');
+  if (!onlineRewarded) {
+    onlineRewarded = true;
+    const earned = field.length > 1 ? PRIZE[me - 1] * (1 + 0.1 * (field.length - 1)) : 0;
+    prof.money += earned;
+    saveProfile(prof);
+    $('resNotes').innerHTML = (earned ? `<div>💰 獎金 <b class="hl">+${money(earned)}</b></div>` : '<div>一個人跑不發獎金，找朋友一起來吧！</div>') + `<div>最佳單圈：${fmt(bestLap)}</div>`;
+    const box = $('resBtns'); box.innerHTML = '';
+    for (const [label, fn, go] of [['回房間', backToLobby, true], ['🎬 觀看重播', enterReplay], ['離開房間', () => leaveOnline()]]) {
+      const b = document.createElement('button');
+      b.textContent = label; if (go) b.className = 'go';
+      b.onclick = fn; box.appendChild(b);
+    }
+  }
+}
+function backToLobby() {
+  if (!roomCode) return openOnline('房間已不存在。');
+  fadeThen(() => {
+    state = 'menu'; paused = false;
+    silenceRace();
+    $('hud').classList.add('hidden'); $('touch').classList.add('hidden');
+    document.body.classList.remove('boosting'); $('boostfx').style.opacity = 0;
+    statesUnsub?.(); statesUnsub = null;
+    clearNetCars();
+    placeOnGrid();
+    camera.fov = 60; camera.updateProjectionMatrix();
+    music?.play('menu');
+    if (isHost() && room.state === 'racing') net.updateRoom(roomCode, { state: 'lobby' });
+    showScreen('lobby');
+    renderLobby();
+  });
+}
+
+// ---- 線上排行榜 ----
+let boardTrack = 'valley';
+async function openBoard() {
+  showScreen('board');
+  $('boardTabs').innerHTML = '';
+  for (const t of TRACKS) {
+    const b = document.createElement('button');
+    b.textContent = t.name; b.className = t.id === boardTrack ? 'on' : '';
+    b.onclick = () => { boardTrack = t.id; openBoard(); };
+    $('boardTabs').appendChild(b);
+  }
+  const list = $('boardList');
+  if (!onlineAvailable) { list.innerHTML = '<p class="muted">線上功能尚未設定：請依照專案裡的 FIREBASE_SETUP.md 建立 Firebase 專案，並把設定貼進 firebase-config.js。</p>'; return; }
+  list.innerHTML = '<p class="muted">載入中…</p>';
+  try {
+    await ensureNet();
+    // 把本機最佳成績補上傳（如果比線上紀錄好）
+    for (const t of TRACKS) if (prof.best[t.id]) await net.submitLap(t.id, { name: prof.name, time: prof.best[t.id], car: carById(prof.car).name });
+    const rows = await net.topLaps(boardTrack, 20);
+    list.innerHTML = rows.length
+      ? `<table>${rows.map((r, i) => `<tr class="${r.uid === net.uid ? 'me' : ''}"><td>${i + 1}</td><td>${escapeHtml(r.name)}</td><td><small>${escapeHtml(r.car || '')}</small></td><td>${fmt(r.time)}</td></tr>`).join('')}</table>`
+      : '<p class="muted">這條賽道還沒有人上榜，跑一圈搶第一吧！</p>';
+  } catch (e) {
+    list.innerHTML = `<p class="muted">⚠ 讀取失敗：${escapeHtml(e.message || e)}</p>`;
+  }
+}
+
 // ================= 主迴圈 =================
 const clock = new THREE.Clock();
 function update(dt) {
@@ -1197,7 +1444,8 @@ function update(dt) {
   const ctl = readControls();
   let fx = { squeal: 0, curb: false };
   if (state === 'countdown') {
-    cdTime -= dt;
+    cdTime = session.mode === 'online' ? (session.startAt - net.serverNow()) / 1000 : cdTime - dt;
+    updateNet(dt);
     const n = Math.ceil(cdTime);
     if (n !== lastCd && n <= 3) {
       lastCd = n;
@@ -1223,13 +1471,15 @@ function update(dt) {
     } else {
       player.boosting = player.braking = false;
     }
-    for (const c of field) if (c.ai) updateAI(c, dt);
+    for (const c of field) if (c.ai && !c.net) updateAI(c, dt);
+    updateNet(dt);
     collideCars();
     if (!player.ai) collideWalls(player);
     for (const c of field) syncModel(c, dt);
     updateGhost();
     recordFrame(dt);
     if (resultsTimer > 0 && (resultsTimer -= dt) <= 0) showResults();
+    if (session.mode === 'online' && openScreen() === 'results' && (onlineResultsTimer -= dt) <= 0) { onlineResultsTimer = 1; renderOnlineResults(); }
   }
   if (centerTimer > 0 && (centerTimer -= dt) <= 0) showCenter('');
   smoke.update(dt);
@@ -1269,7 +1519,7 @@ function frame() {
 }
 
 // ================= 選單與介面 =================
-const SCREENS = ['menu', 'setup', 'career', 'garage', 'settings', 'results'];
+const SCREENS = ['menu', 'setup', 'career', 'garage', 'settings', 'results', 'online', 'lobby', 'board'];
 function showScreen(id) {
   for (const s of SCREENS) $(s).classList.toggle('hidden', s !== id);
   $('pausemenu').classList.add('hidden');
@@ -1306,6 +1556,8 @@ $('btnQuick').onclick = () => openSetup('quick');
 $('btnTT').onclick = () => openSetup('tt');
 $('btnGarage').onclick = () => openGarage();
 $('btnSettings').onclick = () => showScreen('settings');
+$('btnOnline').onclick = () => openOnline();
+$('btnBoard').onclick = () => openBoard();
 document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => {
   if (state === 'garage') leaveGarage();
   showScreen('menu');
@@ -1546,11 +1798,11 @@ for (const [id, key] of [['musicVol', 'music'], ['sfxVol', 'sfx']]) {
   $(id).value = Math.round(settings[key] * 100);
   $(id).oninput = e => { settings[key] = e.target.value / 100; applyVolumes(); saveSettings(); };
 }
-$('restartBtn').onclick = () => { togglePause(); startRace(session); };
+$('restartBtn').onclick = () => { if (session.mode === 'online') return; togglePause(); startRace(session); };
 $('quitBtn').onclick = () => {
   togglePause();
   if (session.mode === 'career') saveProfile(prof); // 盃賽進度保留，可從生涯模式繼續
-  toMenu();
+  if (session.mode === 'online') leaveOnline(); else toMenu();
 };
 
 // ---- 啟動 ----
@@ -1570,5 +1822,5 @@ window.__game = {
   get session() { return session; }, get field() { return field; }, get ghost() { return ghost; },
   player, cars, keys, pad, prof, standings, step: update, SPEED, renderer, render, camera, skids,
   startRace: beginRace, loadTrack, showScreen, openGarage, toMenu: goMenu, beginGame, enterReplay, enterPhoto, exitPhoto,
-  get rec() { return rec; }, get rp() { return rp; }, get music() { return music; }, skipIntro() { introTime = 0; }
+  get rec() { return rec; }, get net() { return net; }, get room() { return room; }, get roomCode() { return roomCode; }, netCars, openOnline, openBoard, get rp() { return rp; }, get music() { return music; }, skipIntro() { introTime = 0; }
 };

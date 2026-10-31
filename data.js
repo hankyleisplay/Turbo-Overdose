@@ -60,7 +60,7 @@ export const TT_REWARD = 1500;   // 計時賽刷新最佳單圈的獎金
 // ================= 存檔 =================
 const KEY = 'turbo-overdose-profile';
 const DEFAULT = () => ({
-  money: 5000, owned: ['gt'], car: 'gt', colors: {}, upgrades: {}, cupsWon: [], cup: null, best: {},
+  name: '車手' + (1000 + Math.random() * 9000 | 0), money: 5000, owned: ['gt'], car: 'gt', colors: {}, upgrades: {}, cupsWon: [], cup: null, best: {},
 });
 export function loadProfile() {
   try {

@@ -100,7 +100,9 @@
       <button id="btnCareer" class="go big">生涯錦標賽</button>
       <button id="btnQuick" class="big">快速比賽</button>
       <button id="btnTT" class="big">計時賽</button>
+      <button id="btnOnline" class="big">🌐 線上對戰</button>
       <button id="btnGarage" class="big">車庫</button>
+      <button id="btnBoard">🏆 線上排行榜</button>
       <button id="btnSettings">設定與操作說明</button>
     </div>
   </div>
@@ -148,6 +150,45 @@
     </div>
   </div>
 </div>
+
+<div id="online" class="screen hidden">
+  <div class="card">
+    <h2>🌐 線上對戰</h2>
+    <p class="sub" id="onlineStatus"></p>
+    <div class="row"><div class="rlabel">暱稱</div><input id="nickInput" class="textin" maxlength="12"></div>
+    <div class="onlinebox">
+      <button id="createRoomBtn" class="go">建立房間</button>
+      <div class="joinrow"><input id="codeInput" class="textin code" maxlength="4" placeholder="代碼"><button id="joinRoomBtn">加入房間</button></div>
+    </div>
+    <div class="btns"><button data-back>返回</button></div>
+  </div>
+</div>
+
+<div id="lobby" class="screen hidden">
+  <div class="card">
+    <h2>房間代碼</h2>
+    <div id="roomCode" class="roomcode">----</div>
+    <p class="sub" id="lobbyHint"></p>
+    <div id="lobbyPlayers" class="lobbyplayers"></div>
+    <div class="row"><div class="rlabel">賽道</div><div id="lobbyTracks" class="choices"></div></div>
+    <div class="btns">
+      <button id="startOnlineBtn" class="go">開始比賽</button>
+      <button id="leaveRoomBtn">離開房間</button>
+    </div>
+  </div>
+</div>
+
+<div id="board" class="screen hidden">
+  <div class="card">
+    <h2>🏆 線上排行榜</h2>
+    <p class="sub">每位玩家在每條賽道的最佳單圈，前 20 名</p>
+    <div id="boardTabs" class="choices"></div>
+    <div id="boardList" class="boardlist"></div>
+    <div class="btns"><button data-back>返回</button></div>
+  </div>
+</div>
+
+<div id="toast"></div>
 
 <div id="settings" class="screen hidden">
   <div class="card">

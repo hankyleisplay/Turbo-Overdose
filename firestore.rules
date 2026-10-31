@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 線上排行榜：tracks/{賽道}/laps/{玩家 uid}，每人每條賽道一筆最佳單圈
+    match /tracks/{track}/laps/{uid} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && track in ['valley', 'desert', 'snow']
+        && request.resource.data.time is number
+        && request.resource.data.time > 15
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 16;
+    }
+  }
+}

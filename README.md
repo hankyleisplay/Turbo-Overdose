@@ -2,6 +2,8 @@
 
 用 [Three.js](https://threejs.org/) 製作的 3D 街頭賽車遊戲，直接在瀏覽器執行，不需要安裝。
 
+**立即遊玩：<https://hankyleisplay.github.io/Turbo-Overdose/>**
+
 和 5 台 AI 對手跑 3 圈，從最後一位出發，靠甩尾集氮氣、在直線上爆發超車。贏得獎金買新車、改裝，一路拿下三個盃賽。
 
 ## 遊戲模式
@@ -10,6 +12,13 @@
 - **快速比賽**：自選賽道與難度，名次越前、難度越高，獎金越多
 - **計時賽**：獨自跑 3 圈，比自己的幽靈車還快就會存成新的幽靈車；刷新最佳單圈有獎金
 - **車庫**：4 台車（Street GT / Blade R / Brute V8 / Apex Hyper），每台可改裝引擎、輪胎、氮氣各 3 級，可換顏色
+
+## 線上功能
+
+- **線上對戰**：建立房間會得到 4 碼代碼，朋友輸入代碼就能加入（最多 6 人）；房主選賽道後同步倒數開跑，名次與完賽時間即時同步，賽後可回房間再賽一場
+- **線上排行榜**：每位玩家在每條賽道的最佳單圈，前 20 名；刷新個人最佳時自動上傳
+
+線上功能使用 Firebase，需先依照 [FIREBASE_SETUP.md](FIREBASE_SETUP.md) 設定；網址加上 `?localnet` 可用本機雙分頁測試。
 
 ## 包裝與呈現
 
@@ -79,3 +88,6 @@ python -m http.server 8765
 - `car.js` — 程式生成的四種車身與幽靈車
 - `fx.js` — 天空、後製特效與濾鏡、胎痕、火花、煙霧
 - `music.js` — 即時合成的背景音樂
+- `net.js` — 線上排行榜與多人連線（Firebase / 本機測試後端）
+- `firebase-config.js` — Firebase 網頁設定
+- `firestore.rules`、`database.rules.json` — Firebase 安全規則
