@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // 程式生成的跑車模型：側面輪廓擠出成車身，車頭朝 +z
 
@@ -95,11 +96,44 @@ const shadowTex = (() => {
   return new THREE.CanvasTexture(c);
 })();
 
+// 卡鉗與煞車碟共用一個材質（用頂點顏色區分），才能合併成同一個物件
+function tint(geo, hex) {
+  const c = new THREE.Color(hex), n = geo.attributes.position.count, a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) a.set([c.r, c.g, c.b], i * 3);
+  geo.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  return geo;
+}
+tint(GEO.disc, 0x777777);
+tint(GEO.caliper, 0xffc400);
+
+// 效能：把同一個群組裡、材質相同的零件合併成一個物件，一台車從 60 個繪製呼叫降到約 19 個
+function mergeByMaterial(group) {
+  const byMat = new Map();
+  for (const m of group.children) if (m.isMesh) {
+    if (!byMat.has(m.material)) byMat.set(m.material, []);
+    byMat.get(m.material).push(m);
+  }
+  for (const [mat, list] of byMat) {
+    if (list.length < 2) continue;
+    const geos = list.map(m => {
+      m.updateMatrix();
+      let g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      g.clearGroups();
+      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g.deleteAttribute(k);
+      return g.applyMatrix4(m.matrix);
+    });
+    const merged = new THREE.Mesh(mergeGeometries(geos), mat);
+    merged.castShadow = true;
+    for (const m of list) group.remove(m);
+    group.add(merged);
+  }
+}
+
 const MAT = {
   black: new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 0.6 }),
   tire: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.92 }),
   rim: new THREE.MeshStandardMaterial({ color: 0xd8dce2, metalness: 1, roughness: 0.22 }),
-  disc: new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.8, roughness: 0.45 }),
+  brake: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.6, roughness: 0.45 }),
   glass: new THREE.MeshPhysicalMaterial({ color: 0x0a1018, metalness: 0.2, roughness: 0.05, clearcoat: 1, transparent: true, opacity: 0.88 }),
   chrome: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1, roughness: 0.12 }),
   head: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff4dd, emissiveIntensity: 1.1 }),
@@ -117,7 +151,6 @@ export function makeCar(color, styleName = 'gt') {
   const paint = new THREE.MeshPhysicalMaterial({
     color, metalness: 0.25, roughness: 0.5, clearcoat: 1, clearcoatRoughness: 0.08
   });
-  const caliperMat = new THREE.MeshStandardMaterial({ color: 0xffc400, roughness: 0.4 });
   const tail = new THREE.MeshStandardMaterial({ color: 0x400000, emissive: 0xff1a1a, emissiveIntensity: 0.6 });
 
   const mesh = (geo, mat, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1, parent = chassis) => {
@@ -156,19 +189,23 @@ export function makeCar(color, styleName = 'gt') {
     const spin = new THREE.Group();
     const side = Math.sign(x);
     mesh(GEO.tire, MAT.tire, 0, 0, 0, 1, 1, 1, spin);
-    mesh(GEO.rim, MAT.black, 0, 0, 0, 1, 1, 1, spin).scale.x = 0.95;
+    mesh(GEO.rim, MAT.tire, 0, 0, 0, 1, 1, 1, spin).scale.x = 0.95;
     for (let k = 0; k < 5; k++) {
       const sp = mesh(GEO.spoke, MAT.rim, side * 0.17, 0, 0, 1, 1, 1, spin);
       sp.rotation.x = k * Math.PI * 2 / 5;
     }
     mesh(GEO.box, MAT.rim, side * 0.18, 0, 0, 0.04, 0.1, 0.1, spin);
     piv.add(spin);
-    mesh(GEO.disc, MAT.disc, side * 0.06, 0, 0, 1, 1, 1, piv);
-    mesh(GEO.caliper, caliperMat, side * 0.1, 0.12, -0.12, 1, 1, 1, piv);
+    mesh(GEO.disc, MAT.brake, side * 0.06, 0, 0, 1, 1, 1, piv);
+    mesh(GEO.caliper, MAT.brake, side * 0.1, 0.12, -0.12, 1, 1, 1, piv);
+    mergeByMaterial(spin);
+    mergeByMaterial(piv);
     root.add(piv);
     wheels.push(spin);
     if (z > 0) pivots.push(piv);
   }
+
+  mergeByMaterial(chassis);
 
   const flames = [-0.45, 0.45].map(x => {
     const f = new THREE.Mesh(GEO.flame, MAT.flame);

@@ -288,36 +288,39 @@ export function buildWorld(def, renderer) {
     });
   }
 
-  // ---- 遠景：山峰 / 平頂岩山 ----
+  // ---- 遠景：山峰 / 平頂岩山（全部合併成一個物件，用頂點顏色上色）----
   {
-    const snow = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true });
+    const parts = [];
+    const colored = (geo, color, x, y, z) => {
+      geo = geo.toNonIndexed();
+      geo.translate(x, y, z);
+      const n = geo.attributes.position.count, a = new Float32Array(n * 3);
+      for (let k = 0; k < n; k++) a.set([color.r, color.g, color.b], k * 3);
+      geo.setAttribute('color', new THREE.BufferAttribute(a, 3));
+      geo.deleteAttribute('uv');
+      parts.push(geo);
+    };
+    const white = new THREE.Color(0xffffff), c = new THREE.Color();
     const count = th.hills === 'mesas' ? 34 : 46;
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + Math.random() * 0.1;
       const r = 1250 + Math.random() * 400;
-      const mat = new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 });
-      let mesh, h;
+      const x = center.x + Math.cos(a) * r, z = center.z + Math.sin(a) * r;
       if (th.hills === 'mesas') {
-        h = 90 + Math.random() * 200;
-        const rad = 120 + Math.random() * 220;
-        mesh = new THREE.Mesh(new THREE.CylinderGeometry(rad * 0.75, rad, h, 7), mat);
-        mat.color.setHSL(0.04 + Math.random() * 0.04, 0.5, 0.36 + Math.random() * 0.12);
+        const h = 90 + Math.random() * 200, rad = 120 + Math.random() * 220;
+        colored(new THREE.CylinderGeometry(rad * 0.75, rad, h, 7), c.setHSL(0.04 + Math.random() * 0.04, 0.5, 0.36 + Math.random() * 0.12), x, h / 2 - 5, z);
       } else {
-        h = 180 + Math.random() * 320;
-        const rad = 160 + Math.random() * 200;
-        mesh = new THREE.Mesh(new THREE.ConeGeometry(rad, h, 6 + (Math.random() * 3 | 0)), mat);
-        if (th.hills === 'snowpeaks') mat.color.setHSL(0.58, 0.15, 0.62 + Math.random() * 0.12);
-        else mat.color.setHSL(0.3 + Math.random() * 0.08, 0.2, 0.25 + Math.random() * 0.12);
+        const h = 180 + Math.random() * 320, rad = 160 + Math.random() * 200, seg = 6 + (Math.random() * 3 | 0);
+        if (th.hills === 'snowpeaks') c.setHSL(0.58, 0.15, 0.62 + Math.random() * 0.12);
+        else c.setHSL(0.3 + Math.random() * 0.08, 0.2, 0.25 + Math.random() * 0.12);
+        colored(new THREE.ConeGeometry(rad, h, seg), c, x, h / 2 - 5, z);
         if (h > 360 || th.hills === 'snowpeaks') {
           const k = th.hills === 'snowpeaks' ? 0.45 : 0.28;
-          const cap = new THREE.Mesh(new THREE.ConeGeometry(rad * k, h * k, mesh.geometry.parameters.radialSegments), snow);
-          cap.position.set(center.x + Math.cos(a) * r, h - 5 - h * k / 2 + 1, center.z + Math.sin(a) * r);
-          group.add(cap);
+          colored(new THREE.ConeGeometry(rad * k, h * k, seg), white, x, h - 5 - h * k / 2 + 1, z);
         }
       }
-      mesh.position.set(center.x + Math.cos(a) * r, h / 2 - 5, center.z + Math.sin(a) * r);
-      group.add(mesh);
     }
+    group.add(new THREE.Mesh(mergeGeometries(parts), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 })));
   }
 
   const s = th.sky;

@@ -31,7 +31,8 @@ const fmt = t => {
 const money = n => '$' + Math.round(n).toLocaleString('en-US');
 
 // ================= Renderer / Scene =================
-const renderer = new THREE.WebGLRenderer({ canvas: $('game'), antialias: true, powerPreference: 'high-performance' });
+// 手機不開硬體反鋸齒（太吃效能）；中、高畫質另外由後製的多重取樣處理
+const renderer = new THREE.WebGLRenderer({ canvas: $('game'), antialias: !matchMedia('(pointer: coarse)').matches, powerPreference: 'high-performance' });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -60,10 +61,36 @@ const isTouch = matchMedia('(pointer: coarse)').matches;
 let quality = 'high';
 try { quality = localStorage.getItem(QUALITY_KEY) || (isTouch ? 'low' : 'high'); } catch { quality = isTouch ? 'low' : 'high'; }
 const post = setupPost(renderer, scene, camera);
-function applyQuality() {
-  const pr = quality === 'high' ? Math.min(devicePixelRatio, 2) : 1;
+// 動態解析度：畫面掉格時自動降低解析度，順了再慢慢調回來
+let dynScale = 1, frameAvg = 16, dynTimer = 0;
+const basePR = () => quality === 'high' ? Math.min(devicePixelRatio, 2) : 1;
+function setPR() {
+  const pr = basePR() * dynScale;
   renderer.setPixelRatio(pr);
   post.composer.setPixelRatio(pr);
+  resize();
+}
+function adaptResolution(raw) {
+  if (raw > 0.25) return;                       // 切換分頁等造成的停頓不列入
+  frameAvg += (raw * 1000 - frameAvg) * 0.05;
+  if ((dynTimer += raw) < 1.5) return;
+  dynTimer = 0;
+  if (frameAvg > 24 && dynScale > 0.5) dynScale = Math.max(0.5, dynScale - 0.1);
+  else if (frameAvg < 14 && dynScale < 1) dynScale = Math.min(1, dynScale + 0.1);
+  else return;
+  setPR();
+}
+// 低畫質：關掉車漆的透明漆層與氮氣光源（光源會讓所有物件的光照計算變重）
+function applyCarQuality(model) {
+  const low = quality === 'low';
+  model.root.traverse(o => {
+    if (o.material?.isMeshPhysicalMaterial) o.material.clearcoat = low ? 0 : 1;
+  });
+  if (model.boostLight) model.boostLight.visible = !low;
+}
+function applyQuality() {
+  skySys.setCheap(quality === 'low');
+  for (const c of [...cars, ...netCars.values()]) applyCarQuality(c.model);
   renderer.shadowMap.enabled = quality !== 'low';
   const ms = quality === 'high' ? 2048 : 1024;
   if (sun.shadow.mapSize.x !== ms) {
@@ -71,7 +98,7 @@ function applyQuality() {
     sun.shadow.map?.dispose(); sun.shadow.map = null;
   }
   scene.traverse(o => { if (o.material) o.material.needsUpdate = true; });
-  resize();
+  setPR();
 }
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
@@ -129,6 +156,7 @@ function makeEntity(name, color, isPlayer, skill = 1, style = 'gt', register = t
   };
   if (isPlayer) e.veh = new Vehicle(e.pos, e.vel);
   scene.add(e.model.root);
+  applyCarQuality(e.model);
   if (register) cars.push(e);
   return e;
 }
@@ -152,6 +180,7 @@ function setPlayerCar() {
     player.model.boostLight.position.set(0, 0.6, -3.2);
     player.model.root.add(player.model.boostLight);
   }
+  applyCarQuality(player.model);
   player.color = playerColor();
   player.model.paint.color.set(player.color);
   player.veh = new Vehicle(player.pos, player.vel, buildSpec(car.id, prof.upgrades[car.id]));
@@ -160,7 +189,7 @@ function setPlayerCar() {
 
 const skids = new SkidMarks(scene);
 const sparks = new Sparks(scene);
-const smoke = new Smoke(scene);
+const smoke = new Smoke(scene, renderer);
 
 function trackAt(s, off, out) {
   s = ((s % L) + L) % L;
@@ -452,6 +481,10 @@ function beginRace(sess = session) {
   nitro = 50; raceTime = 0; lapStart = 0; wrongWay = 0; lastCd = -1; resultsTimer = -1;
   cdTime = 3.6; paused = false;
   state = 'intro'; introTime = INTRO_TIME; showIntro();
+  if (isTouch && innerHeight > innerWidth) {
+    $('rotatehint').classList.add('show');
+    setTimeout(() => $('rotatehint').classList.remove('show'), 3500);
+  }
   photo = null; $('photohud').classList.add('hidden'); applyFilter('none');
   rec = { frames: [], cars: [...field], done: false }; recTimer = 0;
   lastPos = 0;
@@ -778,7 +811,8 @@ function updateCamera(dt) {
     camera.position.y += (Math.random() - 0.5) * vib * 0.5;
     shake = Math.max(0, shake - dt * 2.5);
   }
-  const fov = 58 + sf * 15 + boostFx * 16;
+  // 直向螢幕畫面很窄，把視角拉寬一點
+  const fov = (58 + sf * 15 + boostFx * 16) * (camera.aspect < 1 ? 1.25 : 1);
   if (Math.abs(camera.fov - fov) > 0.05) {
     camera.fov += (fov - camera.fov) * Math.min(1, 4 * dt);
     camera.updateProjectionMatrix();
@@ -787,8 +821,9 @@ function updateCamera(dt) {
   const blur = clamp((sf - 0.5) * 1.6, 0, 1) * 0.8 + boostFx * 1.1;
   su.amount.value += (blur - su.amount.value) * Math.min(1, 6 * dt);
   su.aberration.value = 0.05 + boostFx * 0.45;
-  document.body.classList.toggle('boosting', c.boosting);
-  $('boostfx').style.opacity = (boostFx * 0.9).toFixed(2);
+  if (hudCache.boost !== c.boosting) { hudCache.boost = c.boosting; document.body.classList.toggle('boosting', c.boosting); }
+  const op = (boostFx * 0.9).toFixed(2);
+  if (hudCache.boostOp !== op) { hudCache.boostOp = op; $('boostfx').style.opacity = op; }
   sun.position.copy(c.pos).add(SUN_OFF);
   sun.target.position.copy(c.pos);
 }
@@ -827,11 +862,22 @@ function drawMinimap() {
   mctx.fillStyle = hex(player.color); mctx.strokeStyle = '#fff'; mctx.lineWidth = 2.5;
   mctx.beginPath(); mctx.arc(mmX(player.pos.x), mmY(player.pos.z), 6.5, 0, 7); mctx.fill(); mctx.stroke();
 }
+const hudCache = {};
+function txt(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).textContent = v; } }
+function bar(id, pct) {
+  const v = Math.round(pct * 2) / 2;
+  if (hudCache[id] !== v) { hudCache[id] = v; $(id).style.width = v + '%'; }
+}
+function cls(id, name, on) {
+  const k = id + '.' + name;
+  if (hudCache[k] !== on) { hudCache[k] = on; $(id).classList.toggle(name, on); }
+}
+let hudFrame = 0;
 function updateHUD() {
   const order = standings();
   const v = player.veh;
   const pos = order.indexOf(player) + 1;
-  $('pos').textContent = session.mode === 'tt' ? '計時' : `${pos}/${field.length}`;
+  txt('pos', session.mode === 'tt' ? '計時' : `${pos}/${field.length}`);
   if (state === 'race' && session.mode !== 'tt' && lastPos && pos !== lastPos) {
     const el = $('posdelta');
     el.textContent = pos < lastPos ? '▲' : '▼';
@@ -839,20 +885,20 @@ function updateHUD() {
     void el.offsetWidth; el.classList.add('show');
   }
   lastPos = pos;
-  $('lap').textContent = `${clamp(player.cross, 1, LAPS)}/${LAPS}`;
-  $('time').textContent = fmt(player.finished ? player.finishTime : raceTime);
-  $('laptime').textContent = fmt(player.cross >= 1 && !player.finished ? raceTime - lapStart : 0);
-  $('speed').textContent = Math.round(Math.abs(player.fwd) * 3.6);
-  $('gear').textContent = player.ai ? 'A' : v.u < -0.5 ? 'R' : v.gear;
+  txt('lap', `${clamp(player.cross, 1, LAPS)}/${LAPS}`);
+  txt('time', fmt(player.finished ? player.finishTime : raceTime));
+  txt('laptime', fmt(player.cross >= 1 && !player.finished ? raceTime - lapStart : 0));
+  txt('speed', String(Math.round(Math.abs(player.fwd) * 3.6)));
+  txt('gear', String(player.ai ? 'A' : v.u < -0.5 ? 'R' : v.gear));
   const rn = v.rpm / SPEC.maxRpm;
-  $('rpmfill').style.width = (rn * 100).toFixed(1) + '%';
-  $('rpmfill').classList.toggle('red', rn > 0.9);
-  $('nitrofill').style.width = nitro + '%';
-  $('nitro').classList.toggle('low', nitro < NITRO_START);
+  bar('rpmfill', rn * 100);
+  cls('rpmfill', 'red', rn > 0.9);
+  bar('nitrofill', nitro);
+  cls('nitro', 'low', nitro < NITRO_START);
   if (nitroEmptyFlash > 0) nitroEmptyFlash -= 1 / 60;
-  $('nitro').classList.toggle('empty', nitroEmptyFlash > 0);
-  $('warn').textContent = wrongWay > 1 ? '逆向行駛！' : '';
-  drawMinimap();
+  cls('nitro', 'empty', nitroEmptyFlash > 0);
+  txt('warn', wrongWay > 1 ? '逆向行駛！' : '');
+  if (++hudFrame % 2 === 0) drawMinimap();
 }
 
 function showResults() {
@@ -1513,7 +1559,9 @@ function render(dt) {
 }
 function frame() {
   requestAnimationFrame(frame);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const raw = clock.getDelta();
+  adaptResolution(raw);
+  const dt = Math.min(raw, 0.05);
   update(dt);
   render(dt);
 }

@@ -22,9 +22,22 @@ export class SkySystem {
     this.envGround.position.y = -5;
     this.envScene.add(this.envSky, this.envGround);
     this.env = null;
+    // 低畫質用：把天空預先畫進立方體貼圖當背景，省掉每一格都算一次大氣散射
+    this.bgScene = new THREE.Scene();
+    this.bgSky = new Sky();
+    this.bgSky.scale.setScalar(1000);
+    this.bgScene.add(this.bgSky);
+    this.bgRT = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType });
+    this.cubeCam = new THREE.CubeCamera(1, 3000, this.bgRT);
+    this.cheap = false;
+  }
+  setCheap(on) {
+    this.cheap = on;
+    this.sky.visible = !on;
+    this.scene.background = on ? this.bgRT.texture : null;
   }
   set(sky, sunDir, groundColor) {
-    for (const s of [this.sky, this.envSky]) {
+    for (const s of [this.sky, this.envSky, this.bgSky]) {
       const u = s.material.uniforms;
       u.turbidity.value = sky.turbidity;
       u.rayleigh.value = sky.rayleigh;
@@ -36,6 +49,7 @@ export class SkySystem {
     this.env?.dispose();
     this.env = this.pmrem.fromScene(this.envScene, 0.02);
     this.scene.environment = this.env.texture;
+    this.cubeCam.update(this.renderer, this.bgScene);
     this.scene.environmentIntensity = 0.9;
   }
 }
@@ -177,43 +191,73 @@ export class Sparks {
 }
 
 // ================= 煙霧 / 揚塵 =================
+// 所有煙霧粒子用一個 Points 物件畫完（一次繪製呼叫），手機上比一個粒子一個 Sprite 快很多
 export class Smoke {
-  constructor(scene, max = 160) {
+  constructor(scene, renderer, max = 160) {
     const c = document.createElement('canvas'); c.width = c.height = 64;
     const g = c.getContext('2d');
     const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
     gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
     g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
-    const tex = new THREE.CanvasTexture(c);
-    this.list = [];
-    for (let i = 0; i < max; i++) {
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 }));
-      sp.visible = false; scene.add(sp);
-      this.list.push({ sp, life: 0, max: 1, v: new THREE.Vector3(), size: 1, op: 0.5 });
-    }
-    this.i = 0;
+    this.renderer = renderer;
+    this.max = max; this.i = 0;
+    this.pos = new Float32Array(max * 3).fill(-9999);
+    this.col = new Float32Array(max * 3);
+    this.alpha = new Float32Array(max);
+    this.size = new Float32Array(max);
+    this.vel = new Float32Array(max * 3);
+    this.life = new Float32Array(max); this.maxLife = new Float32Array(max);
+    this.base = new Float32Array(max); this.op = new Float32Array(max);
+    const geo = new THREE.BufferGeometry();
+    const attr = (name, arr, n) => geo.setAttribute(name, new THREE.BufferAttribute(arr, n).setUsage(THREE.DynamicDrawUsage));
+    attr('position', this.pos, 3); attr('pcolor', this.col, 3); attr('alpha', this.alpha, 1); attr('size', this.size, 1);
+    this.mat = new THREE.ShaderMaterial({
+      uniforms: { map: { value: new THREE.CanvasTexture(c) }, scale: { value: 400 } },
+      vertexShader: `attribute vec3 pcolor; attribute float alpha; attribute float size; uniform float scale;
+        varying vec3 vC; varying float vA;
+        void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
+          gl_PointSize = min(size * projectionMatrix[1][1] * scale / -mv.z, 512.0); vC = pcolor; vA = alpha; }`,
+      fragmentShader: `uniform sampler2D map; varying vec3 vC; varying float vA;
+        void main(){ float a = texture2D(map, gl_PointCoord).a * vA; if (a < 0.01) discard; gl_FragColor = vec4(vC, a);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      transparent: true, depthWrite: false,
+    });
+    this.points = new THREE.Points(geo, this.mat);
+    this.points.frustumCulled = false;
+    scene.add(this.points);
+    this.tmpC = new THREE.Color();
   }
   emit(pos, color, size = 1.2, opacity = 0.5, vel) {
-    const p = this.list[this.i++ % this.list.length];
-    p.sp.position.copy(pos);
-    p.sp.material.color.set(color);
-    p.life = p.max = 0.9 + Math.random() * 0.8;
-    p.v.set((Math.random() - 0.5) * 2, 0.8 + Math.random() * 1.4, (Math.random() - 0.5) * 2);
-    if (vel) p.v.addScaledVector(vel, 0.25);
-    p.size = size; p.op = opacity;
-    p.sp.material.rotation = Math.random() * 6.28;
-    p.sp.visible = true;
+    const i = this.i++ % this.max, o = i * 3;
+    this.pos[o] = pos.x; this.pos[o + 1] = pos.y; this.pos[o + 2] = pos.z;
+    const c = this.tmpC.set(color);
+    this.col[o] = c.r; this.col[o + 1] = c.g; this.col[o + 2] = c.b;
+    this.life[i] = this.maxLife[i] = 0.9 + Math.random() * 0.8;
+    this.vel[o] = (Math.random() - 0.5) * 2 + (vel ? vel.x * 0.25 : 0);
+    this.vel[o + 1] = 0.8 + Math.random() * 1.4;
+    this.vel[o + 2] = (Math.random() - 0.5) * 2 + (vel ? vel.z * 0.25 : 0);
+    this.base[i] = size; this.op[i] = opacity;
   }
   update(dt) {
-    for (const p of this.list) {
-      if (p.life <= 0) continue;
-      p.life -= dt;
-      if (p.life <= 0) { p.sp.visible = false; continue; }
-      const k = 1 - p.life / p.max;
-      p.v.multiplyScalar(Math.exp(-1.5 * dt));
-      p.sp.position.addScaledVector(p.v, dt);
-      p.sp.scale.setScalar(p.size + k * 5);
-      p.sp.material.opacity = p.op * (1 - k) * Math.min(1, k * 8);
+    let any = false;
+    const damp = Math.exp(-1.5 * dt);
+    for (let i = 0; i < this.max; i++) {
+      if (this.life[i] <= 0) continue;
+      any = true;
+      this.life[i] -= dt;
+      const o = i * 3;
+      if (this.life[i] <= 0) { this.alpha[i] = 0; this.pos[o + 1] = -9999; continue; }
+      const k = 1 - this.life[i] / this.maxLife[i];
+      for (let j = 0; j < 3; j++) { this.vel[o + j] *= damp; this.pos[o + j] += this.vel[o + j] * dt; }
+      this.size[i] = this.base[i] + k * 5;
+      this.alpha[i] = this.op[i] * (1 - k) * Math.min(1, k * 8);
     }
+    if (!any && !this.dirty) return;
+    this.dirty = any;
+    this.mat.uniforms.scale.value = this.renderer.getDrawingBufferSize(this.tmpV ??= new THREE.Vector2()).y / 2;
+    const a = this.points.geometry.attributes;
+    a.position.needsUpdate = a.pcolor.needsUpdate = a.alpha.needsUpdate = a.size.needsUpdate = true;
   }
 }

@@ -302,3 +302,32 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
   background: rgba(12,18,38,.88); border: 1px solid rgba(255,255,255,.15); border-radius: 20px; padding: 8px 18px; opacity: 0; transition: .3s;
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- 手機版面 ---------- */
+.tgroup.right { display: grid; grid-template-columns: auto auto; gap: 10px; align-items: end; justify-items: center; }
+#rotatehint {
+  position: fixed; left: 50%; top: 45%; transform: translate(-50%, -50%); z-index: 6; pointer-events: none;
+  background: rgba(12,18,38,.85); border-radius: 14px; padding: 12px 18px; font-size: 15px; text-align: center;
+  opacity: 0; transition: opacity .5s;
+}
+#rotatehint.show { opacity: 1; }
+@media (max-width: 700px) {
+  #trackname { display: none; }
+  #speedo, body.touch #speedo { top: 92px; right: 16px; left: auto; bottom: auto; transform: none; text-align: right; }
+  .speedrow { justify-content: flex-end; gap: 8px; }
+  #nitro, #rpm { width: 120px; margin-left: auto; margin-right: 0; }
+  #topright .stat.small { display: none; }
+  #touch button { width: 64px; height: 64px; font-size: 18px; }
+  #touch button.sm { width: 52px; height: 52px; font-size: 13px; }
+  #touch button.gas { width: 76px; height: 76px; }
+  .tgroup.left { gap: 10px; }
+}
+@media (max-height: 450px) and (min-width: 701px) {
+  #minimap { width: 110px; height: 110px; top: 84px; }
+  .stat.big span:last-child { font-size: 30px; }
+  #speedo { bottom: 6px; }
+  #speed { font-size: 38px; }
+  #gear { font-size: 18px; width: 30px; height: 30px; line-height: 30px; }
+  #nitro, #rpm { width: 150px; }
+  #center { font-size: 60px; top: 22%; }
+}
