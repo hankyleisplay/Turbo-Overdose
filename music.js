@@ -54,9 +54,11 @@ export class Music {
   schedule() {
     if (!this.mode || this.ctx.state !== 'running') return;
     const sixteenth = 60 / this.bpm / 4;
-    if (this.nextTime < this.ctx.currentTime - 0.2) this.nextTime = this.ctx.currentTime + 0.05; // 分頁休眠後追上
-    while (this.nextTime < this.ctx.currentTime + 0.15) {
-      this.playStep(this.step, this.nextTime, sixteenth);
+    const now = this.ctx.currentTime;
+    if (this.nextTime < now - 0.5) this.nextTime = now + 0.05;   // 分頁休眠後重新對齊
+    while (this.nextTime < now + 0.3) {
+      // 主執行緒太忙、已經來不及的音符直接跳過，避免一次擠在一起爆音
+      if (this.nextTime >= now) this.playStep(this.step, this.nextTime, sixteenth);
       this.nextTime += sixteenth;
       this.step++;
     }
@@ -94,14 +96,14 @@ export class Music {
     return g;
   }
   kick(t, vol) {
-    const o = this.ctx.createOscillator(), g = this.env(t, 0.9 * vol, 0.002, 0.32);
+    const o = this.ctx.createOscillator(), g = this.env(t, 0.8 * vol, 0.004, 0.32);
     o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
     o.connect(g); g.connect(this.out); o.start(t); o.stop(t + 0.4);
   }
   noise(t, dur, type, freq, vol, send = 0) {
     const src = this.ctx.createBufferSource(); src.buffer = this.noiseBuf;
     const f = this.ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq;
-    const g = this.env(t, vol, 0.002, dur);
+    const g = this.env(t, vol, 0.004, dur);
     src.connect(f); f.connect(g); g.connect(this.out);
     if (send) g.connect(this.send);
     src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.05);
@@ -115,16 +117,16 @@ export class Music {
   hat(t, vol, open) { this.noise(t, open ? 0.12 : 0.04, 'highpass', 7500, vol); }
   bass(m, t, dur, vol) {
     const o = this.ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mtof(m);
-    const f = this.ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 6;
+    const f = this.ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 2.5;
     f.frequency.setValueAtTime(1400, t); f.frequency.exponentialRampToValueAtTime(220, t + dur);
-    const g = this.env(t, vol, 0.005, dur);
+    const g = this.env(t, vol, 0.008, dur);
     o.connect(f); f.connect(g); g.connect(this.out); o.start(t); o.stop(t + dur + 0.05);
   }
   pluck(m, t, dur, vol) {
     const o = this.ctx.createOscillator(); o.type = 'square'; o.frequency.value = mtof(m);
     const f = this.ctx.createBiquadFilter(); f.type = 'lowpass';
     f.frequency.setValueAtTime(3200, t); f.frequency.exponentialRampToValueAtTime(600, t + dur);
-    const g = this.env(t, vol, 0.004, dur);
+    const g = this.env(t, vol, 0.008, dur);
     o.connect(f); f.connect(g); g.connect(this.out); g.connect(this.send);
     o.start(t); o.stop(t + dur + 0.05);
   }

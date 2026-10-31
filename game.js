@@ -335,8 +335,20 @@ function applyVolumes() {
 }
 function initAudio() {
   if (audio) { audio.ctx.resume(); return; }
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-  const comp = ctx.createDynamicsCompressor(); comp.connect(ctx.destination);
+  // 手機用較大的音訊緩衝，避免 CPU 忙碌時來不及送資料造成的劈啪聲
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC({ latencyHint: isTouch ? 'playback' : 'interactive' });
+  // 混音鏈：音效 + 音樂 → 壓縮器 → 柔性削峰 → 喇叭
+  // 最後一級用 tanh 曲線，訊號超過上限時是平滑飽和，不會產生數位破音
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 3;
+  comp.attack.value = 0.004; comp.release.value = 0.2;
+  const pre = ctx.createGain(); pre.gain.value = 0.5;
+  const soft = ctx.createWaveShaper();
+  const sc = new Float32Array(2048);
+  for (let i = 0; i < sc.length; i++) sc[i] = Math.tanh((i / (sc.length - 1) * 2 - 1) * 2);
+  soft.curve = sc; soft.oversample = isTouch ? 'none' : '2x';
+  comp.connect(pre); pre.connect(soft); soft.connect(ctx.destination);
   const master = ctx.createGain(); master.connect(comp);
   const musicBus = ctx.createGain(); musicBus.connect(comp);
   const osc = (type, dest, gain = 1) => {
@@ -376,7 +388,7 @@ function initAudio() {
   // 渦輪哨音
   const tg = ctx.createGain(); tg.gain.value = 0; tg.connect(master);
   const turbo = ctx.createOscillator(); turbo.type = 'sine'; turbo.connect(tg); turbo.start();
-  audio = { ctx, master, musicBus, lp, eg, o1, o2, o3, o4, o5, squeal, wind, hiss, growl, rg, turbo, tg, buf, lastThrottle: 0 };
+  audio = { ctx, master, musicBus, comp, out: soft, lp, eg, o1, o2, o3, o4, o5, squeal, wind, hiss, growl, rg, turbo, tg, buf, lastThrottle: 0 };
   music = new Music(ctx, musicBus);
   applyVolumes();
 }
@@ -395,7 +407,7 @@ function burst(freq, dur, vol, delay = 0, type = 'lowpass', sweepTo = 0) {
   const f = ctx.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(freq, t);
   if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + dur);
   const g = ctx.createGain();
-  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.004); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
   src.connect(f); f.connect(g); g.connect(master);
   src.start(t, Math.random()); src.stop(t + dur);
 }
@@ -406,12 +418,12 @@ function nitroWhoosh() {
   const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.2;
   f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(3500, t + 0.45);
   const g = ctx.createGain();
-  g.gain.setValueAtTime(0.001, t); g.gain.exponentialRampToValueAtTime(0.9, t + 0.06); g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+  g.gain.setValueAtTime(0.001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.06); g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
   src.connect(f); f.connect(g); g.connect(master); src.start(t); src.stop(t + 0.75);
-  burst(90, 0.35, 0.9);
+  burst(90, 0.35, 0.45);
 }
-const crash = (v = 1) => { burst(500, 0.35, 0.7 * v); burst(120, 0.25, 0.8 * v); };
-const backfire = () => { const n = 2 + (Math.random() * 3 | 0); for (let i = 0; i < n; i++) burst(380, 0.07, 0.55, i * (0.06 + Math.random() * 0.05)); };
+const crash = (v = 1) => { burst(500, 0.35, 0.42 * v); burst(120, 0.25, 0.5 * v); };
+const backfire = () => { const n = 2 + (Math.random() * 3 | 0); for (let i = 0; i < n; i++) burst(380, 0.07, 0.35, i * (0.06 + Math.random() * 0.05)); };
 const blowOff = () => burst(4200, 0.35, 0.22, 0, 'highpass', 1400);   // 洩壓閥「噗嘶」
 function toggleMute() {
   muted = !muted;
@@ -1913,5 +1925,5 @@ window.__game = {
   get session() { return session; }, get field() { return field; }, get ghost() { return ghost; },
   player, cars, keys, pad, prof, standings, step: update, SPEED, renderer, render, camera, skids,
   startRace: beginRace, loadTrack, showScreen, openGarage, toMenu: goMenu, beginGame, enterReplay, enterPhoto, exitPhoto,
-  get rec() { return rec; }, get net() { return net; }, get room() { return room; }, get roomCode() { return roomCode; }, netCars, openOnline, openBoard, get rp() { return rp; }, get music() { return music; }, skipIntro() { introTime = 0; }
+  get rec() { return rec; }, get net() { return net; }, get room() { return room; }, get roomCode() { return roomCode; }, netCars, openOnline, openBoard, get rp() { return rp; }, get music() { return music; }, get audio() { return audio; }, skipIntro() { introTime = 0; }
 };
