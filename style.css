@@ -188,3 +188,10 @@ button.danger { background: rgba(255,60,60,.18) !important; }
   .card.panel { max-height: 62vh; }
   .trackcard canvas { width: 90px; height: 68px; }
 }
+
+/* 氮氣不足：條變灰、15% 處有啟動門檻刻度、按下時閃紅 */
+#nitro { position: relative; }
+#nitro::after { content: ""; position: absolute; left: 15%; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,.5); }
+#nitro.low #nitrofill { background: #6b7280; box-shadow: none; }
+#nitro.empty { animation: nitroEmpty .15s 4 alternate; }
+@keyframes nitroEmpty { from { background: rgba(255,255,255,.18); } to { background: rgba(255,60,60,.7); } }

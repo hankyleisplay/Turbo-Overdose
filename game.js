@@ -347,7 +347,8 @@ function updateAudio(ctl, fx) {
 
 // ================= 遊戲狀態 =================
 let state = 'menu', paused = false, cdTime = 0, raceTime = 0, lapStart = 0, bestLap = Infinity, lapTimes = [];
-let boostFx = 0, boostKick = 0, wasBoosting = false;
+let boostFx = 0, boostKick = 0, wasBoosting = false, nitroLock = false, nitroEmptyFlash = 0;
+const NITRO_START = 15;
 let camMode = 0, camH = 0, nitro = 50, wrongWay = 0, shake = 0, menuAngle = 0, lastCd = -1;
 let resultsTimer = -1, curbTimer = 0;
 // 本場設定：mode = quick / career / tt
@@ -407,7 +408,7 @@ function startRace(sess = session) {
   bestLap = prof.best[session.track] ?? Infinity;
   session.prevBest = bestLap;
   lapTimes = [];
-  boostFx = boostKick = 0; wasBoosting = false;
+  boostFx = boostKick = 0; wasBoosting = nitroLock = false; nitroEmptyFlash = 0;
   nitro = 50; raceTime = 0; lapStart = 0; wrongWay = 0; lastCd = -1; resultsTimer = -1;
   cdTime = 3.6; state = 'countdown'; paused = false;
   camH = player.h; camInit = false;
@@ -448,8 +449,15 @@ function surfaceOf(d) {
 function updatePlayer(dt, ctl) {
   const c = player, v = c.veh;
   const surf = surfaceOf(lateral(c));
-  const boosting = ctl.nitro && nitro > 0 && v.u > 5;
-  if (boosting) nitro = Math.max(0, nitro - v.s.nitroDrain * dt);
+  // 氮氣：至少要有 NITRO_START 才能啟動；噴完就鎖住，要放開按鍵才能再用
+  if (!ctl.nitro) nitroLock = false;
+  const canStart = nitro >= NITRO_START && !nitroLock;
+  const boosting = ctl.nitro && v.u > 5 && nitro > 0 && (wasBoosting || canStart);
+  if (boosting) {
+    nitro = Math.max(0, nitro - v.s.nitroDrain * dt);
+    if (nitro <= 0) nitroLock = true;
+  }
+  if (ctl.nitro && !boosting && !wasBoosting && v.u > 5) nitroEmptyFlash = 0.6;
   if (boosting && !wasBoosting) { boostKick = 1; nitroWhoosh(); rumble(0.7, 0.9, 350); }
   wasBoosting = boosting;
   const pc = { throttle: boosting ? 1 : ctl.throttle, brake: ctl.brake, steer: ctl.steer, hand: ctl.hand, boost: boosting };
@@ -461,8 +469,10 @@ function updatePlayer(dt, ctl) {
   // 甩尾集氣
   const slide = Math.abs(v.beta);
   const drifting = slide > 0.12 && v.u > 15 && surf.kind !== 'sand';
-  if (drifting) nitro = Math.min(100, nitro + 22 * slide * dt * 4);
-  nitro = Math.min(100, nitro + 1.2 * dt);
+  if (!boosting) {
+    if (drifting) nitro = Math.min(100, nitro + 22 * slide * dt * 4);
+    nitro = Math.min(100, nitro + 1.2 * dt);
+  }
 
   // 胎痕 / 煙 / 揚塵
   const fx = { squeal: 0, curb: surf.kind === 'curb' && Math.abs(v.u) > 5 };
@@ -782,6 +792,9 @@ function updateHUD() {
   $('rpmfill').style.width = (rn * 100).toFixed(1) + '%';
   $('rpmfill').classList.toggle('red', rn > 0.9);
   $('nitrofill').style.width = nitro + '%';
+  $('nitro').classList.toggle('low', nitro < NITRO_START);
+  if (nitroEmptyFlash > 0) nitroEmptyFlash -= 1 / 60;
+  $('nitro').classList.toggle('empty', nitroEmptyFlash > 0);
   $('warn').textContent = wrongWay > 1 ? '逆向行駛！' : '';
   drawMinimap();
 }
