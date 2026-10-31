@@ -350,3 +350,15 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
   #twheel { width: 124px; height: 124px; }
   .tright { transform: scale(.82); transform-origin: 100% 100%; }
 }
+
+/* ---------- 手排 ---------- */
+#gear.shift { background: #ff3d3d; border-color: #ff8a8a; animation: blink .18s infinite; }
+#tshift { display: none; }
+#touch.manual #tshift { display: block; }
+.tpaddle { width: 56px; height: 56px; bottom: 182px; }
+.tpaddle[data-shift="-1"] { left: 22px; }
+.tpaddle[data-shift="1"] { left: 104px; }
+.tpaddle.flash svg { animation: paddle .25s; }
+@keyframes paddle { from { transform: scale(.82); filter: drop-shadow(0 0 12px #ff5a1f); } }
+@media (max-width: 700px) { .tpaddle { width: 46px; height: 46px; bottom: 142px; } .tpaddle[data-shift="1"] { left: 82px; } .tpaddle[data-shift="-1"] { left: 16px; } }
+@media (max-height: 450px) and (min-width: 701px) { .tpaddle { bottom: 150px; width: 48px; height: 48px; } .tpaddle[data-shift="1"] { left: 90px; } }

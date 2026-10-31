@@ -52,7 +52,30 @@ export class Vehicle {
     this.gear = 1; this.rpm = this.s.idleRpm; this.shiftT = 0;
     this.ax = 0; this.ay = 0;
     this.slipF = 0; this.slipR = 0; this.spin = 0; this.lockup = 0;
-    this.shifted = 0;
+    this.shifted = 0; this.limiter = false;
+  }
+
+  // 手排換檔：dir = +1 升檔、-1 降檔；gear = -1 代表倒檔。回傳是否換檔成功
+  shift(dir) {
+    const s = this.s;
+    if (this.shiftT > 0) return false;
+    if (dir > 0) {
+      if (this.gear === -1) { if (this.u < -2) return false; this.gear = 1; }
+      else if (this.gear < s.gears.length) this.gear++;
+      else return false;
+    } else {
+      if (this.gear === -1) return false;
+      if (this.gear === 1) { if (this.u > 2) return false; this.gear = -1; }
+      else {
+        // 降檔後轉速會爆表就拒絕，保護引擎
+        const rpm = Math.abs(this.u) / s.wheelR * s.gears[this.gear - 2] * s.final * 60 / (2 * Math.PI);
+        if (rpm > s.maxRpm + 300) return false;
+        this.gear--;
+      }
+    }
+    this.shiftT = 0.12;
+    this.shifted = 1;
+    return true;
   }
 
   get beta() { return Math.atan2(this.vl, Math.max(Math.abs(this.u), 1)); }
@@ -85,25 +108,30 @@ export class Vehicle {
 
     // ---- 動力系統 ----
     if (this.shiftT > 0) this.shiftT -= dt;
-    const ratio = () => s.gears[this.gear - 1] * s.final;
+    const ratio = () => s.gears[Math.max(1, this.gear) - 1] * s.final;
     let wheelRpm = Math.abs(u) / s.wheelR * ratio() * 60 / (2 * Math.PI);
-    if (u >= -0.5 && this.shiftT <= 0) {
+    if (!this.manual && u >= -0.5 && this.shiftT <= 0) {
       if (wheelRpm > 7350 && this.gear < s.gears.length) { this.gear++; this.shiftT = 0.16; this.shifted = 1; }
       else if (this.gear > 1 && wheelRpm * s.gears[this.gear - 2] / s.gears[this.gear - 1] < 6600 && wheelRpm < 3800) { this.gear--; this.shiftT = 0.1; }
       wheelRpm = Math.abs(u) / s.wheelR * ratio() * 60 / (2 * Math.PI);
     }
-    const reversing = ctl.brake > 0.1 && u < 1.5 && ctl.throttle < 0.1 && Math.abs(this.r) < 0.5;
+    const reversing = !this.manual && ctl.brake > 0.1 && u < 1.5 && ctl.throttle < 0.1 && Math.abs(this.r) < 0.5;
     let Fdrive = 0;
     if (reversing) {
       Fdrive = u > -14 ? -7000 * ctl.brake : 0;
       this.rpm += (2500 + 2500 * ctl.brake - this.rpm) * Math.min(1, 8 * dt);
     } else {
       // 低速時離合器半聯結，引擎可以拉高轉速
-      const clutchRpm = this.gear === 1 ? s.idleRpm + ctl.throttle * 4200 : 0;
+      const low = this.gear === 1 || this.gear === -1;
+      const clutchRpm = low ? s.idleRpm + ctl.throttle * 4200 : 0;
       const rpm = Math.min(s.maxRpm, Math.max(wheelRpm, clutchRpm, s.idleRpm));
       this.rpm += (rpm - this.rpm) * Math.min(1, 20 * dt);
+      // 手排沒換檔會撞到斷油（轉速上限），引擎動力暫時切斷
+      this.limiter = this.manual && wheelRpm >= s.maxRpm - 50 && ctl.throttle > 0.1;
       if (this.shiftT <= 0 && this.rpm < s.maxRpm - 50) {
-        Fdrive = ctl.throttle * torqueCurve(this.rpm, s) * (ctl.boost ? 1.2 : 1) * ratio() / s.wheelR * 0.9;
+        const dir = this.gear === -1 ? -1 : 1;
+        Fdrive = dir * ctl.throttle * torqueCurve(this.rpm, s) * (ctl.boost ? 1.2 : 1) * ratio() / s.wheelR * 0.9;
+        if (dir < 0 && u < -14) Fdrive = 0;
       }
     }
 

@@ -27,13 +27,13 @@
 <div id="boostfx"></div>
 <div id="hud" class="hidden">
   <div id="topleft">
-    <div class="stat big"><span class="label">名次</span><span id="pos">6/6</span><span id="posdelta"></span></div>
-    <div class="stat"><span class="label">圈數</span><span id="lap">1/3</span></div>
+    <div class="stat big"><span class="label" id="lblPos">名次</span><span id="pos">6/6</span><span id="posdelta"></span></div>
+    <div class="stat"><span class="label" id="lblLap">圈數</span><span id="lap">1/3</span></div>
   </div>
   <div id="topright">
     <div class="stat"><span class="label">總時間</span><span id="time">0:00.00</span></div>
-    <div class="stat small"><span class="label">本圈</span><span id="laptime">0:00.00</span></div>
-    <div class="stat small"><span class="label">最佳</span><span id="bestlap">--</span></div>
+    <div class="stat small"><span class="label" id="lblLapTime">本圈</span><span id="laptime">0:00.00</span></div>
+    <div class="stat small"><span class="label" id="lblBest">最佳</span><span id="bestlap">--</span></div>
   </div>
   <canvas id="minimap" width="200" height="200"></canvas>
   <div id="speedo">
@@ -92,6 +92,18 @@
       </linearGradient>
     </defs>
   </svg>
+
+  <!-- 手排換檔撥片（只在手排時顯示） -->
+  <div id="tshift">
+    <div class="tctl tpaddle" data-shift="-1" aria-label="降檔">
+      <svg viewBox="0 0 56 56"><circle cx="28" cy="28" r="25" fill="rgba(12,18,38,.5)" stroke="rgba(255,255,255,.35)" stroke-width="2"/>
+        <path d="M18 23 L28 33 L38 23" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="tctl tpaddle" data-shift="1" aria-label="升檔">
+      <svg viewBox="0 0 56 56"><circle cx="28" cy="28" r="25" fill="rgba(12,18,38,.5)" stroke="rgba(255,255,255,.35)" stroke-width="2"/>
+        <path d="M18 33 L28 23 L38 33" fill="none" stroke="#ff5a1f" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+  </div>
 
   <!-- 方向盤：按住左右拖曳，類比轉向 -->
   <div id="twheel" class="tctl" aria-label="方向盤">
@@ -168,6 +180,7 @@
       <button id="btnCareer" class="go big">生涯錦標賽</button>
       <button id="btnQuick" class="big">快速比賽</button>
       <button id="btnTT" class="big">計時賽</button>
+      <button id="btnFree" class="big">🏙️ 自由駕駛</button>
       <button id="btnOnline" class="big">🌐 線上對戰</button>
       <button id="btnGarage" class="big">車庫</button>
       <button id="btnBoard">🏆 線上排行榜</button>
@@ -267,6 +280,9 @@
         <button data-q="low">低</button><button data-q="medium">中</button><button data-q="high">高</button>
       </div>
     </div>
+    <div class="row"><div class="rlabel">變速箱</div>
+      <div id="trans" class="choices"><button data-t="auto">自排</button><button data-t="manual">手排</button></div>
+    </div>
     <div class="row"><div class="rlabel">音樂</div><input type="range" id="musicVol" min="0" max="100"></div>
     <div class="row"><div class="rlabel">音效</div><input type="range" id="sfxVol" min="0" max="100"></div>
     <div class="row"><button id="muteBtn">音效：開</button></div>
@@ -274,7 +290,8 @@
       <b>W / ↑</b> 油門　<b>S / ↓</b> 煞車/倒車　<b>A D / ← →</b> 轉向<br>
       <b>空白鍵</b> 甩尾（集氮氣）　<b>Shift</b> 氮氣加速　<b>R</b> 回到賽道<br>
       <b>C</b> 切換視角　<b>M</b> 靜音　<b>P / Esc</b> 暫停<br>
-      🎮 搖桿：<b>RT</b> 油門　<b>LT</b> 煞車　<b>左搖桿</b> 轉向　<b>A</b> 氮氣　<b>B / X</b> 甩尾　<b>Y</b> 視角
+      <b>E / Q</b> 手排升檔 / 降檔（1 檔再降是倒檔）<br>
+      🎮 搖桿：<b>RT</b> 油門　<b>LT</b> 煞車　<b>左搖桿</b> 轉向　<b>A</b> 氮氣　<b>B / X</b> 甩尾　<b>RB / LB</b> 升降檔　<b>Y</b> 視角
     </div>
     <div class="btns">
       <button data-back class="go">返回</button>
