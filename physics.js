@@ -9,7 +9,9 @@ export const SPEC = {
   a: 1.25,            // 重心到前軸
   b: 1.38,            // 重心到後軸
   cgH: 0.32,          // 重心高度（載重轉移用）
-  mu: 2.25,           // 街機化的高抓地力
+  mu: 2.6,            // 街機化的高抓地力
+  rearGrip: 1.12,     // 後輪多一點抓地，過彎車尾比較穩
+  steerFade: 24,      // 高速時轉角遞減的速度（越大，高速能打的角度越多）
   downforce: 1.7,     // N/(m/s)^2
   drag: 0.66,
   rolling: 12,
@@ -91,7 +93,7 @@ export class Vehicle {
     const uAbs = Math.max(Math.abs(u), 2.5);
 
     // ---- 轉向：高速自動減少轉角，並提供反打輔助 ----
-    const steerCap = s.steerMax / (1 + Math.abs(u) / 17);
+    const steerCap = s.steerMax / (1 + Math.abs(u) / s.steerFade);
     let target = -ctl.steer * steerCap;
     if (u > 6) target += Math.max(-0.35, Math.min(0.35, this.beta * 0.55)); // 反打輔助
     const rate = 3.2 * dt;
@@ -104,7 +106,7 @@ export class Vehicle {
     const Fzf = Math.max(0, m * G * s.b / L - wT + df * 0.45);
     const Fzr = Math.max(0, m * G * s.a / L + wT + df * 0.55);
     const muF = s.mu * surf.grip;
-    const muR = s.mu * surf.grip * (ctl.hand ? 0.62 : 1);
+    const muR = s.mu * surf.grip * (ctl.hand ? 0.62 : s.rearGrip);
 
     // ---- 動力系統 ----
     if (this.shiftT > 0) this.shiftT -= dt;

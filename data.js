@@ -10,17 +10,17 @@ export const CARS = [
   {
     id: 'blade', name: 'Blade R', style: 'blade', price: 22000, tier: 1.3,
     desc: '輕量化賽車，抓地力最高，過彎之王。',
-    spec: { mass: 1080, inertia: 1450, peakTorque: 680, mu: 2.5, downforce: 2.1 },
+    spec: { mass: 1080, inertia: 1450, peakTorque: 680, mu: 2.9, downforce: 2.1 },
   },
   {
     id: 'brute', name: 'Brute V8', style: 'muscle', price: 38000, tier: 1.5,
     desc: '大排氣量肌肉車，馬力驚人、尾巴很活，天生的甩尾機器。',
-    spec: { mass: 1420, inertia: 2050, peakTorque: 1050, mu: 2.1, drag: 0.72, downforce: 1.2, nitroThrust: 9500 },
+    spec: { mass: 1420, inertia: 2050, peakTorque: 1050, mu: 2.45, drag: 0.72, downforce: 1.2, nitroThrust: 9500 },
   },
   {
     id: 'hyper', name: 'Apex Hyper', style: 'hyper', price: 85000, tier: 2,
     desc: '頂級超跑，極速與下壓力都是頂尖，直線無人能敵。',
-    spec: { mass: 1220, inertia: 1700, peakTorque: 1000, mu: 2.45, drag: 0.56, downforce: 2.6, nitroThrust: 10500 },
+    spec: { mass: 1220, inertia: 1700, peakTorque: 1000, mu: 2.85, drag: 0.56, downforce: 2.6, nitroThrust: 10500 },
   },
 ];
 export const carById = id => CARS.find(c => c.id === id) || CARS[0];
