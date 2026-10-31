@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Vehicle, SPEC, corneringSpeed } from './physics.js';
 import { makeCar, makeGhost, WHEEL_R } from './car.js';
 import { SkySystem, setupPost, SkidMarks, Sparks, Smoke } from './fx.js';
+import { Music } from './music.js';
 import { TRACKS, trackById, buildWorld, HALF, CURB, WALL, N, ROAD_Y } from './tracks.js';
 import {
   CARS, carById, UPGRADES, MAX_LEVEL, upgradeCost, buildSpec, CUPS, POINTS, PRIZE, DIFF_PAY, DIFF_NAME, TT_REWARD,
@@ -191,8 +192,12 @@ const KEYMAP = {
 };
 const CAM_MODES = 3;
 addEventListener('keydown', e => {
-  if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = true; e.preventDefault(); }
+  if (!started) { e.preventDefault(); beginGame(); return; }
+  if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = true; if (state !== 'menu' && state !== 'garage') e.preventDefault(); }
   if (e.repeat) return;
+  if (state === 'intro') { introTime = 0; return; }
+  if (state === 'replay') { replayKey(e); return; }
+  if (photo) { if (e.code === 'Escape' || e.code === 'KeyP') exitPhoto(); return; }
   if (e.code === 'KeyR') resetToTrack(player);
   if (e.code === 'KeyC') camMode = (camMode + 1) % CAM_MODES;
   if (e.code === 'KeyM') toggleMute();
@@ -252,41 +257,63 @@ function readControls() {
 const NO_INPUT = { throttle: 0, brake: 0, steer: 0, hand: false, nitro: false };
 
 // ================= 音效 =================
-let audio = null, muted = false;
+let audio = null, muted = false, music = null;
+const SETTINGS_KEY = 'turbo-overdose-settings';
+const settings = { music: 0.6, sfx: 0.8 };
+try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch { /* 無 storage */ }
+const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* 無 storage */ } };
+function applyVolumes() {
+  if (!audio) return;
+  audio.master.gain.value = muted ? 0 : 0.45 * settings.sfx;
+  audio.musicBus.gain.value = muted ? 0 : 1;
+  music.setVolume(settings.music);
+}
 function initAudio() {
   if (audio) { audio.ctx.resume(); return; }
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
   const comp = ctx.createDynamicsCompressor(); comp.connect(ctx.destination);
-  const master = ctx.createGain(); master.gain.value = muted ? 0 : 0.45; master.connect(comp);
+  const master = ctx.createGain(); master.connect(comp);
+  const musicBus = ctx.createGain(); musicBus.connect(comp);
   const osc = (type, dest, gain = 1) => {
     const o = ctx.createOscillator(); o.type = type;
     const g = ctx.createGain(); g.gain.value = gain;
     o.connect(g); g.connect(dest); o.start();
     return o;
   };
-  // 引擎：兩個略為失諧的鋸齒波 + 低八度方波
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 2;
+  // 引擎：基頻鋸齒波 ×2（失諧）、低八度方波、2 倍與 3 倍泛音，經過濾波與輕微失真
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 2.5;
+  const shaper = ctx.createWaveShaper();
+  const curve = new Float32Array(1024);
+  for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(2.2 * x); }
+  shaper.curve = curve;
   const eg = ctx.createGain(); eg.gain.value = 0;
-  lp.connect(eg); eg.connect(master);
-  const o1 = osc('sawtooth', lp, 0.6), o2 = osc('sawtooth', lp, 0.5), o3 = osc('square', lp, 0.35);
-  // 噪音來源（輪胎、風切、回火）
+  lp.connect(shaper); shaper.connect(eg); eg.connect(master);
+  const o1 = osc('sawtooth', lp, 0.55), o2 = osc('sawtooth', lp, 0.45), o3 = osc('square', lp, 0.35);
+  const o4 = osc('sine', lp, 0.3), o5 = osc('sawtooth', lp, 0.1);
+  // 噪音來源（輪胎、風切、氮氣、引擎低吼）
   const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  const noise = (type, freq, q) => {
+  const noise = (type, freq, q, dest = master) => {
     const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
     const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
     const g = ctx.createGain(); g.gain.value = 0;
-    src.connect(f); f.connect(g); g.connect(master); src.start();
+    src.connect(f); f.connect(g); g.connect(dest); src.start();
     return { g, f };
   };
   const squeal = noise('bandpass', 1500, 7);
   const wind = noise('lowpass', 600, 0.5);
   const hiss = noise('bandpass', 3200, 0.6);
+  const growl = noise('lowpass', 180, 1);
   const rg = ctx.createGain(); rg.gain.value = 0; rg.connect(master);
   const rumbleOsc = ctx.createOscillator(); rumbleOsc.type = 'square'; rumbleOsc.frequency.value = 34;
   rumbleOsc.connect(rg); rumbleOsc.start();
-  audio = { ctx, master, lp, eg, o1, o2, o3, squeal, wind, hiss, rg, buf, lastThrottle: 0 };
+  // 渦輪哨音
+  const tg = ctx.createGain(); tg.gain.value = 0; tg.connect(master);
+  const turbo = ctx.createOscillator(); turbo.type = 'sine'; turbo.connect(tg); turbo.start();
+  audio = { ctx, master, musicBus, lp, eg, o1, o2, o3, o4, o5, squeal, wind, hiss, growl, rg, turbo, tg, buf, lastThrottle: 0 };
+  music = new Music(ctx, musicBus);
+  applyVolumes();
 }
 function beep(freq, dur = 0.18, type = 'square', vol = 0.25) {
   if (!audio) return;
@@ -296,11 +323,12 @@ function beep(freq, dur = 0.18, type = 'square', vol = 0.25) {
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
   o.connect(g); g.connect(master); o.start(t); o.stop(t + dur);
 }
-function burst(freq, dur, vol, delay = 0, type = 'lowpass') {
+function burst(freq, dur, vol, delay = 0, type = 'lowpass', sweepTo = 0) {
   if (!audio) return;
   const { ctx, master, buf } = audio, t = ctx.currentTime + delay;
   const src = ctx.createBufferSource(); src.buffer = buf;
-  const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq;
+  const f = ctx.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(freq, t);
+  if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + dur);
   const g = ctx.createGain();
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
   src.connect(f); f.connect(g); g.connect(master);
@@ -319,9 +347,10 @@ function nitroWhoosh() {
 }
 const crash = (v = 1) => { burst(500, 0.35, 0.7 * v); burst(120, 0.25, 0.8 * v); };
 const backfire = () => { const n = 2 + (Math.random() * 3 | 0); for (let i = 0; i < n; i++) burst(380, 0.07, 0.55, i * (0.06 + Math.random() * 0.05)); };
+const blowOff = () => burst(4200, 0.35, 0.22, 0, 'highpass', 1400);   // 洩壓閥「噗嘶」
 function toggleMute() {
   muted = !muted;
-  if (audio) audio.master.gain.value = muted ? 0 : 0.45;
+  applyVolumes();
 }
 function updateAudio(ctl, fx) {
   if (!audio) return;
@@ -331,16 +360,22 @@ function updateAudio(ctl, fx) {
   a.o1.frequency.setTargetAtTime(f, t, 0.02);
   a.o2.frequency.setTargetAtTime(f * 1.012, t, 0.02);
   a.o3.frequency.setTargetAtTime(f * 0.5, t, 0.02);
+  a.o4.frequency.setTargetAtTime(f * 2, t, 0.02);
+  a.o5.frequency.setTargetAtTime(f * 3, t, 0.02);
   const thr = ctl.throttle;
   a.lp.frequency.setTargetAtTime(250 + rn * 2400 * (0.45 + 0.55 * thr), t, 0.03);
   a.eg.gain.setTargetAtTime((0.05 + 0.08 * thr + 0.04 * rn + 0.04 * boostFx) * (v.shiftT > 0 ? 0.35 : 1), t, 0.03);
+  a.growl.g.gain.setTargetAtTime(thr * (0.04 + rn * 0.08), t, 0.05);
+  a.growl.f.frequency.setTargetAtTime(120 + rn * 260, t, 0.05);
+  a.turbo.frequency.setTargetAtTime(1800 + rn * 2800, t, 0.1);
+  a.tg.gain.setTargetAtTime(thr * rn * rn * 0.018, t, 0.15);
   a.squeal.g.gain.setTargetAtTime(fx.squeal * 0.22, t, 0.05);
   a.squeal.f.frequency.setTargetAtTime(1300 + fx.squeal * 500, t, 0.1);
   const sp = Math.abs(player.fwd) / REF_SPEED;
   a.wind.g.gain.setTargetAtTime(Math.min(1, sp * sp) * 0.14 + boostFx * 0.06, t, 0.1);
   a.hiss.g.gain.setTargetAtTime(boostFx * 0.16, t, 0.05);
   a.rg.gain.setTargetAtTime(fx.curb ? 0.08 : 0, t, 0.03);
-  if (a.lastThrottle > 0.6 && thr < 0.1 && rpm > 5200) backfire();
+  if (a.lastThrottle > 0.6 && thr < 0.1 && rpm > 5000) { backfire(); blowOff(); }
   if (v.shifted) { v.shifted = 0; if (Math.random() < 0.5) backfire(); }
   a.lastThrottle = thr;
 }
@@ -350,7 +385,7 @@ let state = 'menu', paused = false, cdTime = 0, raceTime = 0, lapStart = 0, best
 let boostFx = 0, boostKick = 0, wasBoosting = false, nitroLock = false, nitroEmptyFlash = 0;
 const NITRO_START = 15;
 let camMode = 0, camH = 0, nitro = 50, wrongWay = 0, shake = 0, menuAngle = 0, lastCd = -1;
-let resultsTimer = -1, curbTimer = 0;
+let resultsTimer = -1, curbTimer = 0, lastPos = 0;
 // 本場設定：mode = quick / career / tt
 let session = { mode: 'quick', track: 'valley', diff: 'normal' };
 
@@ -383,7 +418,8 @@ function resetToTrack(c) {
   skids.last.clear();
 }
 
-function startRace(sess = session) {
+function startRace(sess = session) { fadeThen(() => beginRace(sess)); }
+function beginRace(sess = session) {
   session = sess;
   document.activeElement?.blur();
   initAudio();
@@ -410,10 +446,15 @@ function startRace(sess = session) {
   lapTimes = [];
   boostFx = boostKick = 0; wasBoosting = nitroLock = false; nitroEmptyFlash = 0;
   nitro = 50; raceTime = 0; lapStart = 0; wrongWay = 0; lastCd = -1; resultsTimer = -1;
-  cdTime = 3.6; state = 'countdown'; paused = false;
+  cdTime = 3.6; paused = false;
+  state = 'intro'; introTime = INTRO_TIME; showIntro();
+  photo = null; $('photohud').classList.add('hidden'); applyFilter('none');
+  rec = { frames: [], cars: [...field], done: false }; recTimer = 0;
+  lastPos = 0;
+  music?.play('race');
   camH = player.h; camInit = false;
   showScreen(null);
-  $('hud').classList.remove('hidden');
+  $('hud').classList.add('hidden');
   $('touch').classList.toggle('hidden', !isTouch);
   $('bestlap').textContent = fmt(bestLap);
   $('trackname').textContent = trackById(session.track).name + (session.mode === 'tt' ? ' · 計時賽' : session.mode === 'career' ? ' · ' + cupById(session.cup).name + ` 第 ${prof.cup.race + 1} 場` : '');
@@ -422,7 +463,6 @@ function startRace(sess = session) {
 function togglePause() {
   if (state !== 'race' && state !== 'countdown') return;
   paused = !paused;
-  showCenter(paused ? '暫停' : '', true);
   $('pausemenu').classList.toggle('hidden', !paused);
   if (audio) paused ? audio.ctx.suspend() : audio.ctx.resume();
 }
@@ -431,6 +471,8 @@ function showCenter(text, small = false, time = 0) {
   const el = $('center');
   el.textContent = text;
   el.classList.toggle('smallmsg', small);
+  el.classList.remove('pop'); void el.offsetWidth;
+  if (text) el.classList.add('pop');
   centerTimer = time;
 }
 
@@ -782,7 +824,15 @@ function drawMinimap() {
 function updateHUD() {
   const order = standings();
   const v = player.veh;
-  $('pos').textContent = session.mode === 'tt' ? '計時' : `${order.indexOf(player) + 1}/${field.length}`;
+  const pos = order.indexOf(player) + 1;
+  $('pos').textContent = session.mode === 'tt' ? '計時' : `${pos}/${field.length}`;
+  if (state === 'race' && session.mode !== 'tt' && lastPos && pos !== lastPos) {
+    const el = $('posdelta');
+    el.textContent = pos < lastPos ? '▲' : '▼';
+    el.className = pos < lastPos ? 'up' : 'down';
+    void el.offsetWidth; el.classList.add('show');
+  }
+  lastPos = pos;
   $('lap').textContent = `${clamp(player.cross, 1, LAPS)}/${LAPS}`;
   $('time').textContent = fmt(player.finished ? player.finishTime : raceTime);
   $('laptime').textContent = fmt(player.cross >= 1 && !player.finished ? raceTime - lapStart : 0);
@@ -800,6 +850,7 @@ function updateHUD() {
 }
 
 function showResults() {
+  if (rec) rec.done = true;
   const order = standings();
   const me = order.indexOf(player) + 1;
   const tr = trackById(session.track);
@@ -846,6 +897,7 @@ function showResults() {
       buttons = [['再賽一場', () => startRace(session)], ['回主選單', toMenu]];
     }
   }
+  if (rec?.frames.length > 40) buttons.splice(1, 0, ['🎬 觀看重播', enterReplay]);
   if (earned > 0) notes.unshift(`💰 獎金 <b class="hl">+${money(earned)}</b>`);
   prof.money += earned;
   saveProfile(prof);
@@ -862,6 +914,244 @@ function showResults() {
   $('touch').classList.add('hidden');
 }
 
+// ================= 包裝：開始畫面、轉場、開場 =================
+let started = false;
+function beginGame() {
+  if (started) return;
+  started = true;
+  initAudio();
+  music.play('menu');
+  $('loading').classList.add('gone');
+  setTimeout(() => $('loading').remove(), 800);
+}
+addEventListener('pointerdown', () => {
+  if (!started) beginGame();
+  else if (state === 'intro') introTime = 0;
+});
+function fadeThen(fn) {
+  const f = $('fade');
+  f.classList.add('on');
+  setTimeout(() => {
+    fn();
+    setTimeout(() => f.classList.remove('on'), 60);
+  }, 320);
+}
+
+const INTRO_TIME = 3.6;
+let introTime = 0;
+function showIntro() {
+  const tr = trackById(session.track);
+  $('introTrack').textContent = tr.name;
+  $('introSub').textContent = session.mode === 'tt' ? '計時賽 · 3 圈'
+    : session.mode === 'career' ? `${cupById(session.cup).name} · 第 ${prof.cup.race + 1} / 3 場 · ${DIFF_NAME[session.diff]}`
+    : `快速比賽 · ${DIFF_NAME[session.diff]} · 3 圈`;
+  $('intro').classList.remove('hidden');
+  $('intro').classList.remove('play'); void $('intro').offsetWidth; $('intro').classList.add('play');
+}
+function updateIntro(dt) {
+  introTime -= dt;
+  const k = 1 - Math.max(0, introTime) / INTRO_TIME;
+  const e = k * k * (3 - 2 * k);
+  const c = player, fx = Math.sin(c.h), fz = Math.cos(c.h);
+  // 從車頭前上方繞到車尾，最後剛好接上追車視角
+  const th = c.h + 0.35 + e * (Math.PI - 0.35);
+  const r = 18 - e * 11.4, y = 8 - e * 5.55;
+  camera.position.set(c.pos.x + Math.sin(th) * r, y, c.pos.z + Math.cos(th) * r);
+  camera.lookAt(c.pos.x + fx * 6 * e, 1 + 0.1 * e, c.pos.z + fz * 6 * e);
+  camera.fov = 50 + 8 * e; camera.updateProjectionMatrix();
+  sun.position.copy(c.pos).add(SUN_OFF); sun.target.position.copy(c.pos);
+  post.speed.uniforms.amount.value = 0;
+  if (introTime <= 0) {
+    state = 'countdown';
+    $('intro').classList.add('hidden');
+    $('hud').classList.remove('hidden');
+    camH = c.h; camPos.copy(camera.position); camInit = true;
+  }
+}
+
+// ================= 重播 =================
+const REC_DT = 1 / 20;
+let rec = null, recTimer = 0, rp = null;
+function recordFrame(dt) {
+  if (!rec || rec.done) return;
+  recTimer += dt;
+  while (recTimer >= REC_DT) {
+    recTimer -= REC_DT;
+    rec.frames.push(rec.cars.map(c => [c.pos.x, c.pos.z, c.h, c.steerVis, (c.boosting ? 1 : 0) | (c.braking ? 2 : 0)]));
+  }
+}
+const SHOTS = ['tv', 'chase', 'side', 'heli', 'tv', 'bumper'];
+const SHOT_NAME = { tv: '轉播鏡頭', chase: '追車', side: '側拍', heli: '空拍', bumper: '低角度' };
+function enterReplay() {
+  if (!rec || rec.frames.length < 2) return;
+  rec.done = true;
+  fadeThen(() => {
+    state = 'replay';
+    rp = { t: 0, speed: 1, paused: false, target: player, shot: 0, shotT: 5, tv: null };
+    for (const c of rec.cars) { c.model.root.visible = true; c.ai = true; }
+    if (ghostModel) ghostModel.root.visible = false;
+    showScreen(null);
+    $('hud').classList.add('hidden');
+    $('replayhud').classList.remove('hidden');
+    document.body.classList.remove('boosting'); $('boostfx').style.opacity = 0;
+    silenceRace();
+  });
+}
+function exitReplay() {
+  fadeThen(() => {
+    state = 'results';
+    $('replayhud').classList.add('hidden');
+    showScreen('results');
+  });
+}
+function nextShot() { rp.shot = (rp.shot + 1) % SHOTS.length; rp.shotT = 4.5 + Math.random() * 2.5; rp.tv = null; }
+function replayKey(e) {
+  const dur = (rec.frames.length - 1) * REC_DT;
+  if (e.code === 'Space') rp.paused = !rp.paused;
+  else if (e.code === 'ArrowLeft') rp.t = Math.max(0, rp.t - 5);
+  else if (e.code === 'ArrowRight') rp.t = Math.min(dur - 0.01, rp.t + 5);
+  else if (e.code === 'ArrowUp') rp.speed = Math.min(4, rp.speed * 2);
+  else if (e.code === 'ArrowDown') rp.speed = Math.max(0.25, rp.speed / 2);
+  else if (e.code === 'KeyC') nextShot();
+  else if (e.code === 'Tab') {
+    const i = rec.cars.indexOf(rp.target);
+    rp.target = rec.cars[(i + 1) % rec.cars.length]; rp.tv = null;
+  } else if (e.code === 'Escape' || e.code === 'Enter') exitReplay();
+  e.preventDefault();
+}
+function updateReplay(dt) {
+  const F = rec.frames, dur = (F.length - 1) * REC_DT;
+  const step = rp.paused ? 0 : dt * rp.speed;
+  rp.t += step;
+  if (rp.t >= dur) rp.t = 0;
+  const f = rp.t / REC_DT, i = Math.min(F.length - 2, Math.floor(f)), u = f - i;
+  rec.cars.forEach((c, k) => {
+    const a = F[i][k], b = F[i + 1][k];
+    let dh = b[2] - a[2]; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    c.pos.set(a[0] + (b[0] - a[0]) * u, 0, a[1] + (b[1] - a[1]) * u);
+    c.h = a[2] + dh * u;
+    c.steerVis = a[3];
+    c.fwd = Math.hypot(b[0] - a[0], b[1] - a[1]) / REC_DT;
+    c.ay = c.fwd * dh / REC_DT; c.ax = 0;
+    c.boosting = !!(a[4] & 1); c.braking = !!(a[4] & 2);
+    c.idx = nearestIdx(c.pos, c.idx, 80);
+    syncModel(c, step);
+  });
+  if (!rp.paused && (rp.shotT -= dt) <= 0) nextShot();
+  replayCamera();
+  $('rpBar').style.width = (rp.t / dur * 100).toFixed(1) + '%';
+  $('rpTime').textContent = `${fmt(rp.t)} / ${fmt(dur)}`;
+  $('rpSpeed').textContent = rp.paused ? '❚❚ 暫停' : `▶ ${rp.speed}x`;
+  $('rpTarget').textContent = rp.target.name;
+  $('rpShot').textContent = SHOT_NAME[SHOTS[rp.shot]];
+}
+function replayCamera() {
+  const c = rp.target, fx = Math.sin(c.h), fz = Math.cos(c.h), rx = -fz, rz = fx;
+  const shot = SHOTS[rp.shot];
+  let fov = 55, lookY = 0.9;
+  if (shot === 'tv') {
+    // 賽道旁的固定攝影機，車子開過去後換下一台
+    if (!rp.tv || (rp.tv.x - c.pos.x) * fx + (rp.tv.z - c.pos.z) * fz < -45) {
+      const j = (c.idx + 45) % N, side = Math.random() < 0.5 ? 1 : -1;
+      rp.tv = new THREE.Vector3(P[j].x + NR[j].x * side * (WALL + 6), 3 + Math.random() * 4, P[j].z + NR[j].z * side * (WALL + 6));
+    }
+    camera.position.copy(rp.tv);
+    fov = clamp(2 * Math.atan(5 / camera.position.distanceTo(c.pos)) * 180 / Math.PI, 7, 60);
+  } else if (shot === 'chase') {
+    camera.position.set(c.pos.x - fx * 7, 2.6, c.pos.z - fz * 7);
+    camera.lookAt(c.pos.x + fx * 5, 1, c.pos.z + fz * 5);
+    camera.fov = 60; camera.updateProjectionMatrix();
+    return;
+  } else if (shot === 'side') {
+    camera.position.set(c.pos.x + rx * 6.5 + fx * 1.5, 1.1, c.pos.z + rz * 6.5 + fz * 1.5);
+  } else if (shot === 'heli') {
+    camera.position.set(c.pos.x - fx * 24 + rx * 9, 17, c.pos.z - fz * 24 + rz * 9);
+    fov = 40;
+  } else {
+    camera.position.set(c.pos.x - fx * 4.2 + rx * 1.3, 0.5, c.pos.z - fz * 4.2 + rz * 1.3);
+    fov = 65; lookY = 0.7;
+  }
+  camera.lookAt(c.pos.x, lookY, c.pos.z);
+  camera.fov = fov; camera.updateProjectionMatrix();
+  post.speed.uniforms.amount.value = 0;
+  sun.position.copy(c.pos).add(SUN_OFF); sun.target.position.copy(c.pos);
+}
+
+// ================= 拍照模式 =================
+let photo = null;
+const held = new Set();
+addEventListener('keydown', e => held.add(e.code));
+addEventListener('keyup', e => held.delete(e.code));
+addEventListener('blur', () => held.clear());
+const FILTERS = {
+  none: { sat: 1, con: 1, tint: [1, 1, 1], vig: 0.35 },
+  bw: { sat: 0, con: 1.18, tint: [1, 1, 1], vig: 0.55 },
+  retro: { sat: 0.7, con: 0.95, tint: [1.12, 1.0, 0.78], vig: 0.65 },
+  cinema: { sat: 0.85, con: 1.22, tint: [0.94, 1.0, 1.1], vig: 0.6 },
+  neon: { sat: 1.6, con: 1.1, tint: [1.06, 0.88, 1.18], vig: 0.45 },
+};
+function applyFilter(name) {
+  const f = FILTERS[name], u = post.speed.uniforms;
+  u.saturation.value = f.sat; u.contrast.value = f.con; u.tint.value.set(...f.tint); u.vignette.value = f.vig;
+}
+function enterPhoto() {
+  const c = player;
+  photo = { yaw: c.h + Math.PI + 0.7, pitch: 0.22, dist: 7.5, fov: 50 };
+  $('photoFov').value = 50;
+  $('pausemenu').classList.add('hidden');
+  $('hud').classList.add('hidden');
+  $('photohud').classList.remove('hidden');
+  $('boostfx').style.opacity = 0;
+  post.speed.uniforms.amount.value = 0; post.speed.uniforms.aberration.value = 0;
+}
+function exitPhoto() {
+  photo = null;
+  applyFilter('none');
+  document.querySelectorAll('#filters button').forEach(b => b.classList.toggle('on', b.dataset.f === 'none'));
+  $('photohud').classList.add('hidden');
+  $('hud').classList.remove('hidden');
+  $('pausemenu').classList.remove('hidden');
+  updateCamera(0);
+}
+function updatePhotoCam(dt) {
+  const p = photo, k = dt * 1.4;
+  if (held.has('KeyA')) p.yaw -= k;
+  if (held.has('KeyD')) p.yaw += k;
+  if (held.has('KeyW')) p.pitch += k * 0.6;
+  if (held.has('KeyS')) p.pitch -= k * 0.6;
+  if (held.has('KeyQ')) p.dist *= 1 - dt;
+  if (held.has('KeyE')) p.dist *= 1 + dt;
+  p.pitch = clamp(p.pitch, 0.02, 1.45);
+  p.dist = clamp(p.dist, 2.5, 45);
+  const c = player.pos;
+  camera.position.set(c.x + Math.sin(p.yaw) * Math.cos(p.pitch) * p.dist, 0.25 + Math.sin(p.pitch) * p.dist, c.z + Math.cos(p.yaw) * Math.cos(p.pitch) * p.dist);
+  camera.lookAt(c.x, 0.75, c.z);
+  camera.fov = p.fov; camera.updateProjectionMatrix();
+}
+{
+  let drag = null;
+  $('game').addEventListener('pointerdown', e => { if (photo) drag = { x: e.clientX, y: e.clientY }; });
+  addEventListener('pointerup', () => { drag = null; });
+  addEventListener('pointermove', e => {
+    if (!photo || !drag) return;
+    photo.yaw -= (e.clientX - drag.x) * 0.006;
+    photo.pitch += (e.clientY - drag.y) * 0.004;
+    drag = { x: e.clientX, y: e.clientY };
+  });
+  $('game').addEventListener('wheel', e => { if (photo) { photo.dist *= 1 + e.deltaY * 0.001; e.preventDefault(); } }, { passive: false });
+}
+function savePhoto() {
+  render(0);
+  const url = renderer.domElement.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `turbo-overdose-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`;
+  a.click();
+  const fl = $('flash');
+  fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on');
+  beep(1800, 0.05, 'square', 0.15);
+}
+
 // ================= 主迴圈 =================
 const clock = new THREE.Clock();
 function update(dt) {
@@ -871,6 +1161,22 @@ function update(dt) {
     camera.position.set(center.x + Math.cos(menuAngle) * 520, 230, center.z + Math.sin(menuAngle) * 520);
     camera.lookAt(center);
     sun.position.copy(center).add(SUN_OFF); sun.target.position.copy(center);
+    post.speed.uniforms.amount.value = 0;
+    return;
+  }
+  if (state === 'intro') {
+    updateIntro(dt);
+    for (const c of field) syncModel(c, dt);
+    updateAudio(NO_INPUT, { squeal: 0, curb: false });
+    return;
+  }
+  if (state === 'replay') { updateReplay(dt); smoke.update(dt); return; }
+  if (state === 'results') {
+    menuAngle += dt * 0.15;
+    const c = player.pos;
+    camera.position.set(c.x + Math.cos(menuAngle) * 10, 3.2, c.z + Math.sin(menuAngle) * 10);
+    camera.lookAt(c.x, 0.8, c.z);
+    camera.fov = 50; camera.updateProjectionMatrix();
     post.speed.uniforms.amount.value = 0;
     return;
   }
@@ -886,7 +1192,7 @@ function update(dt) {
     for (const w of player.model.wheels) w.rotation.x = 0;
     return;
   }
-  if (paused) return;
+  if (paused) { if (photo) updatePhotoCam(dt); return; }
 
   const ctl = readControls();
   let fx = { squeal: 0, curb: false };
@@ -922,6 +1228,7 @@ function update(dt) {
     if (!player.ai) collideWalls(player);
     for (const c of field) syncModel(c, dt);
     updateGhost();
+    recordFrame(dt);
     if (resultsTimer > 0 && (resultsTimer -= dt) <= 0) showResults();
   }
   if (centerTimer > 0 && (centerTimer -= dt) <= 0) showCenter('');
@@ -972,10 +1279,14 @@ const openScreen = () => SCREENS.find(s => !$(s).classList.contains('hidden'));
 function silenceRace() {
   if (!audio) return;
   audio.ctx.resume();
-  for (const g of [audio.eg, audio.wind.g, audio.squeal.g, audio.hiss.g, audio.rg]) g.gain.value = 0;
+  for (const g of [audio.eg, audio.wind.g, audio.squeal.g, audio.hiss.g, audio.growl.g, audio.tg, audio.rg]) g.gain.value = 0;
 }
-function toMenu() {
-  state = 'menu'; paused = false;
+function toMenu() { fadeThen(goMenu); }
+function goMenu() {
+  state = 'menu'; paused = false; photo = null;
+  $('photohud').classList.add('hidden'); $('replayhud').classList.add('hidden');
+  applyFilter('none');
+  music?.play('menu');
   silenceRace();
   $('hud').classList.add('hidden'); $('touch').classList.add('hidden');
   document.body.classList.remove('boosting'); $('boostfx').style.opacity = 0;
@@ -1225,6 +1536,16 @@ $('resetBtn').onclick = () => {
 
 // ---- 暫停選單 ----
 $('resumeBtn').onclick = () => togglePause();
+$('photoBtn').onclick = () => enterPhoto();
+$('photoExit').onclick = () => exitPhoto();
+$('photoSave').onclick = () => savePhoto();
+$('photoFov').oninput = e => { if (photo) photo.fov = +e.target.value; };
+choose('#filters button', 'f', f => applyFilter(f));
+$('rpExit').onclick = () => exitReplay();
+for (const [id, key] of [['musicVol', 'music'], ['sfxVol', 'sfx']]) {
+  $(id).value = Math.round(settings[key] * 100);
+  $(id).oninput = e => { settings[key] = e.target.value / 100; applyVolumes(); saveSettings(); };
+}
 $('restartBtn').onclick = () => { togglePause(); startRace(session); };
 $('quitBtn').onclick = () => {
   togglePause();
@@ -1239,6 +1560,8 @@ placeOnGrid();
 applyQuality();
 showScreen('menu');
 frame();
+$('loading').classList.add('ready');
+$('lhint').textContent = isTouch ? '點擊畫面開始' : '按任意鍵開始';
 
 // 除錯 / 自動測試用
 window.__game = {
@@ -1246,5 +1569,6 @@ window.__game = {
   get P() { return P; }, get T() { return T; }, get NR() { return NR; }, get W() { return W; },
   get session() { return session; }, get field() { return field; }, get ghost() { return ghost; },
   player, cars, keys, pad, prof, standings, step: update, SPEED, renderer, render, camera, skids,
-  startRace, loadTrack, showScreen, openGarage, toMenu
+  startRace: beginRace, loadTrack, showScreen, openGarage, toMenu: goMenu, beginGame, enterReplay, enterPhoto, exitPhoto,
+  get rec() { return rec; }, get rp() { return rp; }, get music() { return music; }, skipIntro() { introTime = 0; }
 };

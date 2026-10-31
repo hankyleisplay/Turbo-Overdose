@@ -15,12 +15,19 @@
 </script>
 </head>
 <body>
+<div id="loading">
+  <div class="logo">TURBO<span>OVERDOSE</span></div>
+  <div class="lbar"><i></i></div>
+  <div class="lhint" id="lhint">載入中…</div>
+</div>
+<div id="fade"></div>
+<div id="flash"></div>
 <canvas id="game"></canvas>
 
 <div id="boostfx"></div>
 <div id="hud" class="hidden">
   <div id="topleft">
-    <div class="stat big"><span class="label">名次</span><span id="pos">6/6</span></div>
+    <div class="stat big"><span class="label">名次</span><span id="pos">6/6</span><span id="posdelta"></span></div>
     <div class="stat"><span class="label">圈數</span><span id="lap">1/3</span></div>
   </div>
   <div id="topright">
@@ -38,6 +45,37 @@
   <div id="trackname"></div>
   <div id="center"></div>
   <div id="warn"></div>
+</div>
+
+<div id="intro" class="hidden">
+  <div class="istripe"></div>
+  <div class="itrack" id="introTrack"></div>
+  <div class="isub" id="introSub"></div>
+  <div class="iskip">按任意鍵跳過</div>
+</div>
+
+<div id="replayhud" class="hidden">
+  <div class="rptop"><span class="recdot">● REPLAY</span><span id="rpShot"></span><span>追蹤：<b id="rpTarget"></b></span></div>
+  <div class="rpbottom">
+    <div class="rpbar"><i id="rpBar"></i></div>
+    <div class="rpinfo"><span id="rpTime"></span><span id="rpSpeed"></span></div>
+    <div class="rphelp">空白鍵 暫停　← → 倒轉 / 快轉 5 秒　↑ ↓ 播放速度　C 換鏡頭　Tab 換車　Esc 離開</div>
+    <button id="rpExit">離開重播</button>
+  </div>
+</div>
+
+<div id="photohud" class="hidden">
+  <div class="phpanel">
+    <b>📷 拍照模式</b>
+    <div class="phrow"><span>濾鏡</span>
+      <div id="filters" class="choices">
+        <button data-f="none" class="on">原色</button><button data-f="bw">黑白</button><button data-f="retro">復古</button><button data-f="cinema">電影</button><button data-f="neon">霓虹</button>
+      </div>
+    </div>
+    <div class="phrow"><span>視角</span><input type="range" id="photoFov" min="15" max="90" value="50"></div>
+    <small>拖曳滑鼠旋轉、滾輪縮放；鍵盤 A D 旋轉、W S 高低、Q E 遠近</small>
+    <div class="btns"><button id="photoSave" class="go">儲存照片</button><button id="photoExit">返回</button></div>
+  </div>
 </div>
 
 <div id="touch" class="hidden">
@@ -119,6 +157,8 @@
         <button data-q="low">低</button><button data-q="medium">中</button><button data-q="high">高</button>
       </div>
     </div>
+    <div class="row"><div class="rlabel">音樂</div><input type="range" id="musicVol" min="0" max="100"></div>
+    <div class="row"><div class="rlabel">音效</div><input type="range" id="sfxVol" min="0" max="100"></div>
     <div class="row"><button id="muteBtn">音效：開</button></div>
     <div class="help">
       <b>W / ↑</b> 油門　<b>S / ↓</b> 煞車/倒車　<b>A D / ← →</b> 轉向<br>
@@ -149,6 +189,7 @@
     <div class="menubtns">
       <button id="resumeBtn" class="go">繼續</button>
       <button id="restartBtn">重新開始</button>
+      <button id="photoBtn">📷 拍照模式</button>
       <button id="quitBtn">回主選單</button>
     </div>
   </div>

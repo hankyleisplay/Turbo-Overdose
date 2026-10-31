@@ -47,10 +47,14 @@ const SpeedShader = {
     amount: { value: 0 },      // 徑向模糊強度
     vignette: { value: 0.35 },
     aberration: { value: 0 },
+    saturation: { value: 1 },
+    contrast: { value: 1 },
+    tint: { value: new THREE.Vector3(1, 1, 1) },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform float amount; uniform float vignette; uniform float aberration;
+    uniform float saturation; uniform float contrast; uniform vec3 tint;
     varying vec2 vUv;
     void main(){
       vec2 dir = vUv - vec2(0.5, 0.55);
@@ -65,6 +69,9 @@ const SpeedShader = {
         col.b += texture2D(tDiffuse, vUv - off * (1.0 - aberration)).b;
       }
       col /= 8.0;
+      float l = dot(col.rgb, vec3(0.299, 0.587, 0.114));
+      col.rgb = mix(vec3(l), col.rgb, saturation);
+      col.rgb = max(vec3(0.0), (col.rgb - 0.18) * contrast + 0.18) * tint;
       col.rgb *= 1.0 - vignette * smoothstep(0.35, 0.95, d * 1.25);
       gl_FragColor = vec4(col.rgb, 1.0);
     }`
