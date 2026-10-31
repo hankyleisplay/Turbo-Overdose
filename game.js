@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Vehicle, SPEC, corneringSpeed } from './physics.js';
-import { makeCar, makeGhost, WHEEL_R } from './car.js';
+import { makeCar, makeGhost, WHEEL_R, setHeadlights } from './car.js';
 import { SkySystem, setupPost, SkidMarks, Sparks, Smoke } from './fx.js';
 import { Music } from './music.js';
 import { connect, onlineAvailable, onlineLocal } from './net.js';
@@ -58,6 +58,9 @@ sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
 const skySys = new SkySystem(renderer, scene);
+const moon = new THREE.DirectionalLight(0x8fa8ff, 0);
+moon.position.set(-200, 300, 120);
+scene.add(moon);
 
 // 畫質設定
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -116,7 +119,7 @@ let W = null, P, T, NR, L, ds, center;
 const SPEED = new Float32Array(N);
 const AI_BRAKE = 19;
 function loadTrack(id) {
-  if (W && W.def.id === id) return;
+  if (W && W.def.id === id && !W.isCity) return;
   if (W) { scene.remove(W.group); W.dispose(); }
   W = id === 'city' ? buildCity(renderer) : buildWorld(trackById(id), renderer);
   scene.add(W.group);
@@ -533,7 +536,7 @@ function beginRace(sess = session) {
     c.color = COLORS[ci % COLORS.length]; c.model.paint.color.set(c.color); ci++;
   });
   placeOnGrid();
-  if (session.mode === 'free') { spawnTraffic(); ow.start(); } else { clearTraffic(); if (ow.active) ow.stop(); }
+  if (session.mode === 'free') { spawnTraffic(); ow.start(); resetDayTime(); updateDayNight(0, true); } else { clearTraffic(); if (ow.active) ow.stop(); }
   $('touch').classList.toggle('free', session.mode === 'free');
   $('trackname').classList.toggle('hidden', session.mode === 'free');
   odometer = topSpeed = 0;
@@ -1629,6 +1632,7 @@ function hitResponse(c, nx, nz) {
   c.vel.multiplyScalar(0.86);
   c.veh.r *= 0.4;
   const hit = -vn;
+  if (hit > 3 && c === player) ow.damage((hit - 3) * 2.2);
   if (hit > 3 && c === player) {
     shake = Math.min(1, hit / 25);
     crash(Math.min(1, hit / 20));
@@ -1676,6 +1680,7 @@ function collideTraffic() {
         rumble(Math.min(1, -vn / 15), 0.5, 180);
         tmpV.set(p.pos.x - nx * CAR_R, 0.7, p.pos.z - nz * CAR_R);
         sparks.emit(tmpV, p.vel, 18);
+        ow.damage((-vn - 4) * 1.8);
       }
     }
     e.tr.wait = 2; e.tr.v = 0;
@@ -1736,6 +1741,18 @@ const ow = createOpenWorld({
   scene, camera, player, $, prof,
   W: () => W, state: () => state, quality: () => quality, traffic: () => traffic, audio: () => audio,
   makeCop, takeCar, syncModel, collideCity,
+  makeRacer: (style, color) => { const e = makeEntity('對手', color, false, 1, style, false); e.veh = new Vehicle(e.pos, e.vel, buildSpec(style === 'muscle' ? 'brute' : style)); return e; },
+  smoke: (pos, color, size, op, vel) => smoke.emit(pos, color, size, op, vel),
+  boom: pos => {
+    burst(80, 0.9, 1); burst(400, 0.5, 0.7); burst(2000, 0.25, 0.3);
+    for (let k = 0; k < 26; k++) {
+      tmpV.set(pos.x + (Math.random() - 0.5) * 3, 0.6 + Math.random() * 2.5, pos.z + (Math.random() - 0.5) * 3);
+      smoke.emit(tmpV, k % 3 ? 0x2a2a2a : 0xff8a1f, 2.5 + Math.random() * 2, 0.9);
+    }
+    tmpV.set(pos.x, 1, pos.z); sparks.emit(tmpV, player.vel, 60);
+    shake = 1; rumble(1, 1, 600);
+    const fl = $('flash'); fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on');
+  },
   // 被搶走的車：只從車流名單移除（模型交給玩家繼續用），再補一台新的車流
   removeTraffic: c => { traffic.splice(traffic.indexOf(c), 1); c.model.root.visible = true; addTrafficCar(); },
   respawn: () => { const sp = W.spawn; player.pos.set(sp.x, 0, sp.z); player.h = sp.h; player.veh.reset(sp.h); player.veh.manual = !!settings.manual; camH = sp.h; camInit = false; },
@@ -1745,6 +1762,47 @@ const ow = createOpenWorld({
   thump: v => { burst(160, 0.2, 0.55 * v); burst(900, 0.06, 0.2 * v); },
   door: () => { burst(320, 0.07, 0.3); burst(1400, 0.03, 0.12, 0.07); },
 });
+
+// ================= 日夜循環（城市） =================
+// 一個遊戲小時 = 20 秒，一整天約 8 分鐘；從下午四點開始
+let timeOfDay = 16, envTimer = 0, nightNow = 0;
+const DAY_COLORS = { fogDay: new THREE.Color(), fogNight: new THREE.Color(0x0a0f1e), sunDay: new THREE.Color(), sunSet: new THREE.Color(0xff8a4a) };
+function updateDayNight(dt, force = false) {
+  timeOfDay = (timeOfDay + dt / 20) % 24;
+  const th = W.def.theme;
+  const elev = 62 * Math.sin((timeOfDay - 6) / 12 * Math.PI);           // 6 點日出、18 點日落
+  const az = THREE.MathUtils.degToRad(th.sky.azimuth + (timeOfDay - 12) * 8);
+  const dir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - Math.max(elev, -10)), az);
+  const n = clamp((4 - elev) / 12, 0, 1);                               // 夜晚程度
+  nightNow = n;
+  W.sunDir.copy(dir);
+  SUN_OFF.copy(dir).multiplyScalar(300);
+  skySys.sky.material.uniforms.sunPosition.value.copy(dir).multiplyScalar(1000);
+  const day = clamp(elev / 18, 0, 1);
+  DAY_COLORS.sunDay.set(th.sun[0]);
+  sun.color.copy(DAY_COLORS.sunSet).lerp(DAY_COLORS.sunDay, day);
+  sun.intensity = th.sun[1] * clamp(elev / 10, 0, 1);
+  sun.castShadow = elev > 2;
+  moon.intensity = n * 0.55;
+  hemi.intensity = THREE.MathUtils.lerp(th.hemi[2], 0.32, n);
+  hemi.color.set(th.hemi[0]).lerp(DAY_COLORS.fogNight, n * 0.6);
+  DAY_COLORS.fogDay.set(th.fog[0]);
+  scene.fog.color.copy(DAY_COLORS.fogDay).lerp(DAY_COLORS.fogNight, n);
+  renderer.toneMappingExposure = THREE.MathUtils.lerp(th.exposure, 0.85, n);
+  W.setNight(n);
+  setHeadlights(n);
+  // 環境反射每 4 秒重算一次（太常算會掉格）
+  if ((envTimer -= dt) <= 0 || force) { envTimer = 4; skySys.set(th.sky, dir, th.envGround); }
+}
+function resetDayTime() {
+  timeOfDay = 16; nightNow = 0;
+  setHeadlights(0);
+}
+function cityBeams() {
+  const on = nightNow > 0.25;
+  for (const c of [...traffic, ...ow.cars()]) c.model.beam.visible = on;
+  player.model.beam.visible = on && !ow.onFoot && !player.model.wreck;
+}
 
 // ================= 手排換檔 =================
 function shiftGear(dir) {
@@ -1840,7 +1898,7 @@ function update(dt) {
     }
     for (const c of field) if (c.ai && !c.net) updateAI(c, dt);
     updateNet(dt);
-    if (W.isCity) { updateTraffic(dt); collideTraffic(); collideCity(player); ow.update(dt, state === 'race' ? ctl : NO_INPUT); }
+    if (W.isCity) { updateTraffic(dt); collideTraffic(); collideCity(player); ow.update(dt, state === 'race' ? ctl : NO_INPUT); updateDayNight(dt); cityBeams(); }
     collideCars();
     if (!player.ai && !W.isCity) collideWalls(player);
     for (const c of field) syncModel(c, dt);
@@ -1906,6 +1964,8 @@ function goMenu() {
   state = 'menu'; paused = false; photo = null;
   clearTraffic();
   ow.stop();
+  moon.intensity = 0; setHeadlights(0); sun.castShadow = true;
+  player.model.beam.visible = false;
   $('speedo').classList.remove('hidden');
   $('photohud').classList.add('hidden'); $('replayhud').classList.add('hidden');
   applyFilter('none');

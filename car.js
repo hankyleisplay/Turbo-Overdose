@@ -64,6 +64,7 @@ const GEO = {
   box: new THREE.BoxGeometry(1, 1, 1),
   flame: new THREE.ConeGeometry(0.16, 1.3, 12).rotateX(-Math.PI / 2).translate(0, 0, -0.65),
   shadow: new THREE.PlaneGeometry(2.6, 5.2).rotateX(-Math.PI / 2),
+  beam: new THREE.PlaneGeometry(7, 18).rotateX(-Math.PI / 2),
 };
 
 // 依高度把車身往內收（與高度成線性，側面維持平面，陰影不會出現折痕）
@@ -129,6 +130,16 @@ function mergeByMaterial(group) {
   }
 }
 
+// 夜間車燈打在路面上的光（假光源，用加法混色的貼圖，不增加燈光計算）
+const beamTex = (() => {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 120, 4, 32, 70, 70);
+  gr.addColorStop(0, 'rgba(255,245,220,1)'); gr.addColorStop(0.6, 'rgba(255,240,210,.35)'); gr.addColorStop(1, 'rgba(255,240,210,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 128);
+  return new THREE.CanvasTexture(c);
+})();
+
 const MAT = {
   black: new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 0.6 }),
   tire: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.92 }),
@@ -139,6 +150,7 @@ const MAT = {
   head: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff4dd, emissiveIntensity: 1.1 }),
   flame: new THREE.MeshBasicMaterial({ color: 0x6fd0ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
   shadow: new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }),
+  beam: new THREE.MeshBasicMaterial({ map: beamTex, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }),
 };
 
 export function makeCar(color, styleName = 'gt') {
@@ -218,7 +230,19 @@ export function makeCar(color, styleName = 'gt') {
   shadow.renderOrder = 1;
   root.add(shadow);
 
-  return { root, chassis, wheels, pivots, flames, tail, paint, style: styleName };
+  const beam = new THREE.Mesh(GEO.beam, MAT.beam);
+  beam.position.set(0, 0.14, headZ + 9);
+  beam.visible = false;
+  beam.renderOrder = 2;
+  root.add(beam);
+
+  return { root, chassis, wheels, pivots, flames, tail, paint, beam, style: styleName };
+}
+
+// 夜晚程度 0~1：車燈變亮、路面上的光變明顯
+export function setHeadlights(n) {
+  MAT.beam.opacity = n * 0.55;
+  MAT.head.emissiveIntensity = 1.1 + n * 2.5;
 }
 
 // 計時賽的幽靈車：半透明、不投影
@@ -230,6 +254,6 @@ export function makeGhost(styleName) {
     o.material = o.material.clone();
     Object.assign(o.material, { transparent: true, opacity: 0.32, depthWrite: false });
   });
-  g.root.children.filter(o => o.geometry === GEO.shadow).forEach(o => o.removeFromParent());
+  g.root.children.filter(o => o.geometry === GEO.shadow || o.geometry === GEO.beam).forEach(o => o.removeFromParent());
   return g;
 }

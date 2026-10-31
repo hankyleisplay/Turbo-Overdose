@@ -33,6 +33,14 @@ function speckle(g, w, h, base, lo, span, n) {
   }
 }
 
+function signTex(renderer, text, bg, fg = '#fff') {
+  return canvasTex(renderer, 256, 64, (g, w, h) => {
+    g.fillStyle = bg; g.fillRect(0, 0, w, h);
+    g.fillStyle = fg; g.font = 'bold 40px "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h / 2 + 2);
+  });
+}
+
 export function buildCity(renderer) {
   const group = new THREE.Group();
   const size = GRID * CELL;
@@ -85,6 +93,38 @@ export function buildCity(renderer) {
   // ---- 街區、人行道、建築、公園 ----
   const blocks = [];
   const centerI = GRID / 2;
+  const signs = [];
+  // 加油站：遮雨棚 + 油槍；修車廠：小廠房 + 地上的維修位。站點中心放在離街道近的一側
+  function buildService(b, type, cx, cz) {
+    const g = new THREE.Group();
+    g.position.set(cx, 0.25, cz);
+    const box = (w, h, d, x, y, z, mat) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m); return m; };
+    box(38, 0.06, 38, 0, 0.03, 0, new THREE.MeshStandardMaterial({ color: 0x8e9196, roughness: 0.9 }));
+    if (type === 'gas') {
+      const red = new THREE.MeshStandardMaterial({ color: 0xd8312a, roughness: 0.5 });
+      const white = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.6 });
+      box(20, 0.8, 13, 0, 6, 0, white); box(20.2, 0.35, 13.2, 0, 5.55, 0, red);
+      for (const [x, z] of [[-8, -5], [8, -5], [-8, 5], [8, 5]]) box(0.5, 5.4, 0.5, x, 2.7, z, white);
+      for (const x of [-4, 4]) { box(1.1, 1.7, 0.7, x, 0.85, 0, red); box(0.9, 0.5, 0.75, x, 1.45, 0, new THREE.MeshStandardMaterial({ color: 0x1b1d22 })); }
+      const sign = new THREE.MeshStandardMaterial({ map: signTex(renderer, '⛽ 加油站', '#d8312a'), emissive: 0xffffff, emissiveMap: null, emissiveIntensity: 0 });
+      box(6, 1.5, 0.3, 12, 8, -14, sign); box(0.35, 8, 0.35, 12, 4, -14, white);
+      signs.push(sign);
+    } else {
+      const wall = new THREE.MeshStandardMaterial({ color: 0x5a6470, roughness: 0.8 });
+      box(24, 8, 14, 0, 4, 10, wall);
+      box(10, 6, 0.4, 0, 3, 2.9, new THREE.MeshStandardMaterial({ color: 0x23272e, roughness: 0.6 }));
+      const sign = new THREE.MeshStandardMaterial({ map: signTex(renderer, '🔧 修車・烤漆', '#1f7cff'), emissive: 0xffffff, emissiveIntensity: 0 });
+      box(12, 2, 0.3, 0, 9.4, 2.9, sign);
+      signs.push(sign);
+      b.buildings.push({ x0: cx - 12, x1: cx + 12, z0: cz + 3, z1: cz + 17 });
+      const ring = new THREE.Mesh(new THREE.RingGeometry(3.6, 4.4, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x3dc8ff, transparent: true, opacity: 0.8 }));
+      ring.position.set(0, 0.1, -6);
+      g.add(ring);
+    }
+    group.add(g);
+    services.push({ type, x: cx, z: type === 'gas' ? cz : cz - 6 });
+  }
+  const services = [];
   for (let bi = 0; bi < GRID; bi++) for (let bj = 0; bj < GRID; bj++) {
     const x0 = node(bi) + ROAD / 2, x1 = node(bi + 1) - ROAD / 2;
     const z0 = node(bj) + ROAD / 2, z1 = node(bj + 1) - ROAD / 2;
@@ -108,20 +148,23 @@ export function buildCity(renderer) {
   group.add(walks);
 
   // 窗戶貼圖：一格 8 公尺寬、7 公尺高（兩層樓），部分窗戶亮燈；左下角一小塊是屋頂顏色
-  const winTex = canvasTex(renderer, 128, 112, (g, w, h) => {
-    g.fillStyle = '#d9d6cf'; g.fillRect(0, 0, w, h);
-    for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {
-      const lit = Math.random() < 0.18;
-      g.fillStyle = lit ? '#ffd98a' : '#2c3a4a';
+  const litPattern = Array.from({ length: 32 }, () => Math.random() < 0.32);
+  const drawWindows = night => (g, w, h) => {
+    g.fillStyle = night ? '#000' : '#d9d6cf'; g.fillRect(0, 0, w, h);
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 8; c++) {
+      const lit = litPattern[r * 8 + c];
+      if (night && !lit) continue;
+      g.fillStyle = night ? '#fff' : '#2c3a4a';
       g.fillRect(c * 32 + 5, r * 56 + 10, 22, 36);
-      g.fillStyle = 'rgba(255,255,255,.15)';
-      g.fillRect(c * 32 + 5, r * 56 + 10, 22, 6);
+      if (!night) { g.fillStyle = 'rgba(255,255,255,.15)'; g.fillRect(c * 32 + 5, r * 56 + 10, 22, 6); }
     }
-    g.fillStyle = '#6b6b6b'; g.fillRect(0, h - 4, 4, 4);
-  });
+    if (!night) { g.fillStyle = '#6b6b6b'; g.fillRect(0, h - 4, 4, 4); }
+  };
+  const winTex = canvasTex(renderer, 256, 224, drawWindows(false));
+  const litTex = canvasTex(renderer, 256, 224, drawWindows(true));
   const HEIGHTS = [12, 20, 30, 44, 62, 86];
   const LOT = 40;
-  const bmat = new THREE.MeshStandardMaterial({ map: winTex, roughness: 0.7, metalness: 0.1 });
+  const bmat = new THREE.MeshStandardMaterial({ map: winTex, emissiveMap: litTex, emissive: 0xffd08a, emissiveIntensity: 0, roughness: 0.7, metalness: 0.1 });
   const variants = HEIGHTS.map(h => {
     const geo = new THREE.BoxGeometry(LOT, h, LOT).translate(0, h / 2, 0);
     // 讓窗戶大小一致：依建築尺寸縮放 UV；屋頂（+y 面）指到貼圖左下角的屋頂色
@@ -129,7 +172,7 @@ export function buildCity(renderer) {
     for (let k = 0; k < uv.count; k++) {
       const face = Math.floor(k / 4);
       if (face === 2 || face === 3) uv.setXY(k, 0.01, 0.01);
-      else uv.setXY(k, uv.getX(k) * LOT / 8, uv.getY(k) * h / 7);
+      else uv.setXY(k, uv.getX(k) * LOT / 16, uv.getY(k) * h / 14);
     }
     const im = new THREE.InstancedMesh(geo, bmat, blocks.length * 4);
     im.castShadow = im.receiveShadow = true;
@@ -139,6 +182,10 @@ export function buildCity(renderer) {
   });
   const PALETTE = [0xe8e2d6, 0xc9b49a, 0xa9b6c4, 0xd4a58a, 0x9fa7ad, 0xe3cfa8, 0x8fa9c2];
   const trees = [];
+  {
+    const pool = blocks.filter(b => !b.park && b.dc > 0.8 && b.dc < 4.2).sort(() => Math.random() - 0.5);
+    ['gas', 'gas', 'gas', 'repair', 'repair'].forEach((type, k) => { pool[k].service = type; });
+  }
   for (const b of blocks) {
     if (b.park) {
       for (let k = 0; k < 14; k++) trees.push([b.x0 + 8 + Math.random() * (BLOCK - 16), b.z0 + 8 + Math.random() * (BLOCK - 16)]);
@@ -146,6 +193,7 @@ export function buildCity(renderer) {
     }
     for (let lx = 0; lx < 2; lx++) for (let lz = 0; lz < 2; lz++) {
       const cx = b.x0 + 3 + LOT / 2 + lx * (LOT + 4), cz = b.z0 + 3 + LOT / 2 + lz * (LOT + 4);
+      if (b.service && lx === 0 && lz === 0) { buildService(b, b.service, cx, cz); continue; }
       // 越靠市中心越高
       const tall = Math.max(0, 1 - b.dc / 5);
       const hi = Math.min(HEIGHTS.length - 1, Math.floor(Math.random() * 3 + tall * 4));
@@ -170,6 +218,32 @@ export function buildCity(renderer) {
     });
     group.add(trunk, crown);
   }
+
+  // ---- 路燈：每個街區四個角各一支，夜晚亮起並在地上投出光暈 ----
+  const lampPos = [];
+  for (const b of blocks) for (const [x, z, dx, dz] of [[b.x0, b.z0, -1, -1], [b.x1, b.z0, 1, -1], [b.x0, b.z1, -1, 1], [b.x1, b.z1, 1, 1]])
+    lampPos.push([x - dx * 1.4, z - dz * 1.4, dx, dz]);
+  const poleGeo = new THREE.CylinderGeometry(0.12, 0.16, 7, 6).translate(0, 3.5, 0);
+  const poles = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: 0x3a3f47, metalness: 0.6, roughness: 0.5 }), lampPos.length);
+  const lampMat = new THREE.MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffd9a0, emissiveIntensity: 0 });
+  const heads = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.22, 0.5), lampMat, lampPos.length);
+  const poolTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,220,160,1)'); gr.addColorStop(1, 'rgba(255,220,160,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  const poolMat = new THREE.MeshBasicMaterial({ map: poolTex, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+  const pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(16, 16).rotateX(-Math.PI / 2), poolMat, lampPos.length);
+  lampPos.forEach(([x, z, dx, dz], i) => {
+    poles.setMatrixAt(i, m4.makeTranslation(x, 0.25, z));
+    heads.setMatrixAt(i, m4.makeTranslation(x + dx * 1.2, 7.1, z + dz * 1.2));
+    pools.setMatrixAt(i, m4.makeTranslation(x + dx * 3, 0.1, z + dz * 3));
+  });
+  poles.castShadow = true;
+  pools.renderOrder = 2;
+  group.add(poles, heads, pools);
 
   // ---- 城市外圍護欄 ----
   {
@@ -232,6 +306,14 @@ export function buildCity(renderer) {
     bounds: { minX: -edge, maxX: edge, minZ: -edge, maxZ: edge },
     grid: GRID, cell: CELL, road: ROAD, origin: O, edge, node, blocks, blockAt,
     spawn: { x: node(GRID / 2) - 3.5, z: node(GRID / 2) - CELL / 2, h: 0 },
+    services,
+    // 夜晚程度 0~1：窗戶、路燈、招牌亮起
+    setNight(n) {
+      bmat.emissiveIntensity = n * 1.1;
+      lampMat.emissiveIntensity = n * 3;
+      poolMat.opacity = n * 0.55;
+      for (const m of signs) m.emissiveIntensity = n * 0.6;
+    },
     dispose() {
       group.traverse(o => {
         o.geometry?.dispose();
