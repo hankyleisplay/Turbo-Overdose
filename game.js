@@ -562,6 +562,7 @@ function beginRace(sess = session) {
   session.prevBest = bestLap;
   lapTimes = [];
   boostFx = boostKick = 0; wasBoosting = nitroLock = false; nitroEmptyFlash = 0;
+  driftPts = driftTime = driftHold = 0; $('drift').className = '';
   nitro = 50; raceTime = 0; lapStart = 0; wrongWay = 0; lastCd = -1; resultsTimer = -1;
   cdTime = session.mode === 'free' ? 0 : 3.6; paused = false;
   state = 'intro'; introTime = INTRO_TIME; showIntro();
@@ -642,6 +643,7 @@ function updatePlayer(dt, ctl) {
     if (drifting) nitro = Math.min(100, nitro + 22 * slide * dt * 4);
     nitro = Math.min(100, nitro + 1.2 * dt);
   }
+  updateDriftScore(dt, v, slide, surf);
 
   // 胎痕 / 煙 / 揚塵
   const fx = { squeal: 0, curb: surf.kind === 'curb' && Math.abs(v.u) > 5 };
@@ -779,6 +781,7 @@ function collideWalls(c) {
     if (c.veh) c.veh.r *= 0.4;
     const hit = Math.abs(vn);
     if (hit > 3) {
+      if (c === player) driftFail();
       shake = Math.min(1, hit / 25);
       crash(Math.min(1, hit / 20));
       rumble(Math.min(1, hit / 20), 0.6, 220);
@@ -1637,7 +1640,7 @@ function hitResponse(c, nx, nz) {
   c.vel.multiplyScalar(0.86);
   c.veh.r *= 0.4;
   const hit = -vn;
-  if (hit > 3 && c === player) ow.damage((hit - 3) * 2.2);
+  if (hit > 3 && c === player) { ow.damage((hit - 3) * 2.2); driftFail(); }
   if (hit > 3 && c === player) {
     shake = Math.min(1, hit / 25);
     crash(Math.min(1, hit / 20));
@@ -1874,6 +1877,40 @@ function toggleHints() {
   saveSettings();
   document.querySelectorAll('#hintsSet button').forEach(b => b.classList.toggle('on', (b.dataset.h === 'on') === settings.hints));
   toast(settings.hints ? '操作提示：顯示' : '操作提示：隱藏（按 H 再打開）');
+}
+
+// ================= 甩尾分數 =================
+// 甩尾中依角度 × 速度累積分數，連續甩越久倍率越高；放開後結算（自由駕駛換成獎金），撞到東西就歸零
+let driftPts = 0, driftHold = 0, driftTime = 0;
+function updateDriftScore(dt, v, slide, surf) {
+  const el = $('drift');
+  if (v.drift > 0.5 && slide > 0.18 && v.u > 11 && surf.kind !== 'sand') {
+    driftTime += dt; driftHold = 0;
+    const mult = 1 + Math.min(4, Math.floor(driftTime / 1.5));
+    driftPts += slide * v.u * dt * 10 * mult;
+    $('driftPts').textContent = Math.round(driftPts).toLocaleString('en-US');
+    $('driftMult').textContent = mult > 1 ? '×' + mult : '';
+    el.className = 'on';
+  } else if (driftPts > 0 && (driftHold += dt) > 0.7) bankDrift();
+}
+function bankDrift() {
+  const pts = Math.round(driftPts), el = $('drift');
+  driftPts = driftTime = driftHold = 0;
+  if (pts < 50) { el.className = ''; return; }
+  $('driftPts').textContent = '+' + pts.toLocaleString('en-US');
+  $('driftMult').textContent = '';
+  el.className = 'bank';
+  beep(1046, 0.08, 'triangle', 0.15); setTimeout(() => beep(1568, 0.1, 'triangle', 0.15), 70);
+  if (session.mode === 'free') { prof.money += Math.round(pts / 10); saveProfile(prof); }
+  setTimeout(() => { if (el.className === 'bank') el.className = ''; }, 1400);
+}
+function driftFail() {
+  if (driftPts < 50) { driftPts = driftTime = 0; return; }
+  driftPts = driftTime = driftHold = 0;
+  $('driftPts').textContent = '甩尾失敗';
+  $('driftMult').textContent = '';
+  $('drift').className = 'fail';
+  setTimeout(() => { if ($('drift').className === 'fail') $('drift').className = ''; }, 1200);
 }
 
 // ================= 主迴圈 =================

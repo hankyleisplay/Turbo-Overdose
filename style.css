@@ -610,3 +610,19 @@ input[type=range]:focus { outline: none; }
 
 .rlabel { width: 72px; flex: none; text-align: right; }
 .row { gap: 14px; }
+
+/* ---------- 甩尾分數 ---------- */
+#drift { position: absolute; left: 50%; top: 58%; transform: translateX(-50%) skewX(-12deg); text-align: center; opacity: 0; pointer-events: none;
+  font-family: Orbitron, "Noto Sans TC", sans-serif; text-shadow: 0 3px 12px rgba(0,0,0,.7); transition: opacity .25s; }
+#drift b { display: inline-block; font-size: 34px; font-weight: 900; font-style: italic; color: #fff; }
+#drift i { font-style: normal; font-weight: 900; font-size: 22px; color: var(--gold); margin-left: 8px; }
+#drift small { display: block; font-size: 12px; letter-spacing: 6px; font-weight: 700; color: var(--acc); }
+#drift.on { opacity: 1; }
+#drift.on b { animation: driftPulse .3s infinite alternate; }
+#drift.bank { opacity: 1; animation: driftBank 1.4s forwards; }
+#drift.bank b { color: var(--gold); }
+#drift.fail { opacity: 1; animation: driftBank 1.2s forwards; }
+#drift.fail b { color: #ff4d4d; font-size: 26px; }
+@keyframes driftPulse { to { transform: scale(1.06); } }
+@keyframes driftBank { 0% { transform: translateX(-50%) skewX(-12deg) scale(1.25); } 20% { transform: translateX(-50%) skewX(-12deg) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) skewX(-12deg) translateY(-30px); } }
+@media (max-width: 700px) { #drift { top: 46%; } #drift b { font-size: 26px; } }

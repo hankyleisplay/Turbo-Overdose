@@ -2,6 +2,7 @@
 // 座標慣例：heading h 時前方 f = (sin h, cos h)，左方 = (cos h, -sin h)，h 增加 = 向左轉
 
 const G = 9.81;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 export const SPEC = {
   mass: 1250,
@@ -55,6 +56,7 @@ export class Vehicle {
     this.ax = 0; this.ay = 0;
     this.slipF = 0; this.slipR = 0; this.spin = 0; this.lockup = 0;
     this.shifted = 0; this.limiter = false;
+    this.drift = 0;    // 甩尾程度 0~1（平滑過渡，避免抓地力瞬間恢復把車拉正）
   }
 
   // 手排換檔：dir = +1 升檔、-1 降檔；gear = -1 代表倒檔。回傳是否換檔成功
@@ -93,9 +95,15 @@ export class Vehicle {
     const uAbs = Math.max(Math.abs(u), 2.5);
 
     // ---- 轉向：高速自動減少轉角，並提供反打輔助 ----
+    const slip = Math.abs(this.beta);
+    const want = u > 11 && (
+      (ctl.hand && Math.abs(ctl.steer) > 0.2) ||
+      (this.drift > 0.15 && ctl.throttle > 0.3 && slip > 0.06 && ctl.steer * Math.sign(this.beta) > -0.35));   // 甩尾只由手煞車起甩；反打就結束
+    this.drift += ((want ? 1 : 0) - this.drift) * Math.min(1, (want ? 7 : 2.2) * dt);
     const steerCap = s.steerMax / (1 + Math.abs(u) / s.steerFade);
     let target = -ctl.steer * steerCap;
-    if (u > 6) target += Math.max(-0.35, Math.min(0.35, this.beta * 0.55)); // 反打輔助
+    // 反打輔助：平常幫你把車救回來；甩尾中減弱，才不會把甩尾硬拉直
+    if (u > 6) target += Math.max(-0.35, Math.min(0.35, this.beta * (0.55 - 0.35 * this.drift)));
     const rate = 3.2 * dt;
     this.delta += Math.max(-rate, Math.min(rate, target - this.delta));
     const d = this.delta * sgn;
@@ -106,7 +114,8 @@ export class Vehicle {
     const Fzf = Math.max(0, m * G * s.b / L - wT + df * 0.45);
     const Fzr = Math.max(0, m * G * s.a / L + wT + df * 0.55);
     const muF = s.mu * surf.grip;
-    const muR = s.mu * surf.grip * (ctl.hand ? 0.62 : s.rearGrip);
+    // 甩尾中後輪抓地力降低，車尾才滑得住；手煞車時最滑
+    const muR = s.mu * surf.grip * (ctl.hand ? 0.7 : s.rearGrip + (0.74 - s.rearGrip) * this.drift);
 
     // ---- 動力系統 ----
     if (this.shiftT > 0) this.shiftT -= dt;
@@ -177,12 +186,17 @@ export class Vehicle {
     const cd = Math.cos(d), sd = Math.sin(d);
     let Fx = FxR + FxF * cd - FyF * sd - s.drag * u * Math.abs(u) - (s.rolling + surf.drag) * u;
     if (ctl.boost && u > 0) Fx += s.nitroThrust * Math.max(0.25, 1 - u / 120);
-    const Fy = FyR + FyF * cd + FxF * sd;
+    let Fy = FyR + FyF * cd + FxF * sd;
+    // 甩尾中踩油門：沿著行進方向補一點推力，不會一甩就掉一大截速度（街機手感）
+    if (this.drift > 0.05 && ctl.throttle > 0 && u > 5) {
+      const sp = Math.hypot(u, vl), push = this.drift * ctl.throttle * 4200;
+      Fx += push * u / sp; Fy += push * vl / sp;
+    }
     let Tz = s.a * (FyF * cd + FxF * sd) - s.b * FyR;
 
     // 低速時抑制抖動
     if (Math.abs(u) < 1 && ctl.throttle < 0.05 && !reversing) { Fx -= u * m * 4; }
-    Tz -= this.r * 900 * (1 + 2 / (1 + Math.abs(u)));
+    Tz -= this.r * 900 * (1 + 2 / (1 + Math.abs(u))) * (1 - 0.25 * this.drift);
 
     this.ax += (Fx / m - this.ax) * Math.min(1, 10 * dt);
     this.ay += (Fy / m - this.ay) * Math.min(1, 10 * dt);
@@ -191,8 +205,18 @@ export class Vehicle {
     this.vel.x += axw * dt; this.vel.z += azw * dt;
     this.r += Tz / s.inertia * dt;
     // 車身穩定系統：滑動角超過上限就把車頭拉回行進方向（甩尾時放寬）
-    const b = this.beta, bLim = ctl.hand ? 0.6 : 0.3;
-    if (Math.abs(b) > bLim && Math.abs(u) > 5) this.r += Math.sign(b) * (Math.abs(b) - bLim) * 18 * dt;
+    const b = this.beta, bLim = 0.3 + 0.6 * this.drift;
+    if (Math.abs(b) > bLim && Math.abs(u) > 5) this.r += Math.sign(b) * (Math.abs(b) - bLim) * (18 + 10 * this.drift) * dt;
+    // 甩尾角度控制器：滑動角 β 的變化率 = 行進方向的轉動率 − 車頭轉動率。
+    // 依方向盤決定想要的甩尾角（往彎內打較深、反打較淺），直接把車頭轉速帶到能平順收斂的值，不會過衝打轉
+    if (this.drift > 0.05 && Math.abs(b) > 0.03 && u > 8) {
+      const side = Math.sign(b);                       // 負 = 向左甩
+      const into = clamp(ctl.steer * side, -1, 1);     // 1 = 往彎內打
+      const goal = side * (0.38 + 0.2 * into);
+      const pathRate = (Fy / m) / Math.max(5, Math.hypot(u, vl));
+      const rWant = pathRate + 3.2 * (b - goal);
+      this.r += (rWant - this.r) * Math.min(1, 9 * dt) * this.drift;
+    }
     this.h += this.r * dt;
     this.pos.x += this.vel.x * dt; this.pos.z += this.vel.z * dt;
 
