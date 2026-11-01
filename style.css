@@ -366,9 +366,9 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
 /* ---------- 開放世界 ---------- */
 #owhud { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); text-align: center; text-shadow: 0 2px 6px #000; }
 #owstars { font-size: 26px; letter-spacing: 3px; }
-#owstars i { font-style: normal; color: rgba(255,255,255,.22); }
-#owstars i.on { color: #ffd23f; text-shadow: 0 0 10px rgba(255,210,63,.8); }
-#owstars.flash i.on { animation: blink .5s infinite; }
+#owstars .ic { width: 24px; height: 24px; margin: 0 1px; color: rgba(255,255,255,.3); fill: rgba(255,255,255,.08); }
+#owstars .ic.on { color: #ffd23f; fill: #ffd23f; filter: drop-shadow(0 0 6px rgba(255,210,63,.8)); }
+#owstars.flash .ic.on { animation: blink .5s infinite; }
 #owmoney { font-family: Orbitron, monospace; font-weight: 900; font-size: 20px; color: #7dff9a; }
 #owmission { font-size: 14px; margin-top: 4px; }
 #owhint { position: absolute; left: 0; right: 0; bottom: 34%; text-align: center; font-size: 20px; font-weight: 700; text-shadow: 0 2px 8px #000; }
@@ -397,3 +397,33 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
 #shop .btns { margin-top: 8px; }
 #shop small { opacity: .5; }
 @media (max-width: 700px) { #carstat .sbar { width: 50px; } #shop { bottom: 240px; } }
+
+/* ---------- 統一圖示 ---------- */
+.ic { width: 1.15em; height: 1.15em; vertical-align: -0.2em; margin-right: .4em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.menubtns button { display: flex; align-items: center; justify-content: center; }
+.menubtns button .ic { width: 1.25em; height: 1.25em; }
+.wallet .ic { color: #ffd23f; }
+.ic.host { color: #ffd23f; margin-left: .3em; }
+#rpSpeed .ic { width: 1em; height: 1em; }
+h2 .ic { width: 1em; height: 1em; }
+
+/* ---------- 遊戲中的操作提示 ---------- */
+#ctrlhint {
+  position: absolute; left: 16px; bottom: 16px; display: flex; flex-wrap: wrap; gap: 6px 12px; max-width: min(34vw, 420px);
+  font-size: 13px; text-shadow: 0 1px 4px #000; transition: opacity .6s;
+}
+#ctrlhint.dim { opacity: .45; }
+#ctrlhint.gone { opacity: 0; }
+#ctrlhint .kc { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+#ctrlhint kbd {
+  font-family: Orbitron, "Noto Sans TC", sans-serif; font-size: 11px; font-weight: 700; min-width: 22px; text-align: center;
+  padding: 3px 6px; border-radius: 5px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.35); border-bottom-width: 2px;
+}
+#ctrlhint.pad kbd { border-radius: 10px; background: rgba(43,208,255,.18); border-color: rgba(43,208,255,.5); }
+#ctrlhint.touch {
+  left: 50%; bottom: auto; top: 40%; transform: translateX(-50%); max-width: 92vw; justify-content: center;
+  background: rgba(12,18,38,.65); padding: 6px 12px; border-radius: 12px;
+}
+#ctrlhint.touch b { color: #ffd23f; font-weight: 700; }
+@media (max-height: 450px) and (min-width: 701px) { #ctrlhint.touch { top: 30%; max-width: 60vw; } }
+@media (max-width: 700px) { #owmission { font-size: 11px; max-width: 46vw; margin: 4px auto 0; line-height: 1.5; } #owmoney { font-size: 16px; } }

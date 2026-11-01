@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { icon } from './icons.js';
 
 // ================= 開放世界：步行、上下車、行人、警察、任務 =================
 // G 是 game.js 提供的介面（場景、玩家、車輛工廠、音效、HUD 等），見 game.js 的 createOpenWorld 呼叫處
@@ -754,7 +755,7 @@ export function createOpenWorld(G) {
       box.appendChild(b);
     };
     if (svc.type === 'gas') {
-      G.$('shopTitle').textContent = '⛽ 加油站';
+      G.$('shopTitle').innerHTML = icon('fuel') + '加油站';
       const need = Math.max(0, 100 - m.fuel), cost = Math.ceil(need * 3);
       G.$('shopInfo').textContent = `油量 ${Math.round(m.fuel)}%`;
       if (need < 1) btn('油箱已滿', 0, () => {}, false), box.lastChild.disabled = true;
@@ -766,9 +767,9 @@ export function createOpenWorld(G) {
         }, true);
       }
     } else {
-      G.$('shopTitle').textContent = '🔧 修車・烤漆';
+      G.$('shopTitle').innerHTML = icon('wrench') + '修車・烤漆';
       const dmg = Math.max(0, 100 - m.health), cost = Math.ceil(dmg * 12);
-      G.$('shopInfo').textContent = `車況 ${Math.round(m.health)}%${ow.wanted ? `　通緝 ${'★'.repeat(ow.wanted)}` : ''}`;
+      G.$('shopInfo').textContent = `車況 ${Math.round(m.health)}%${ow.wanted ? `　通緝等級 ${ow.wanted}` : ''}`;
       if (dmg >= 1) btn('修理', cost, () => { G.prof.money -= cost; G.saveProfile(); m.health = 100; G.beep(880, 0.12, 'triangle'); }, true);
       btn('重新烤漆', 400, () => {
         G.prof.money -= 400; G.saveProfile();
@@ -786,7 +787,7 @@ export function createOpenWorld(G) {
   function updateHud() {
     const h = G.$('owhud');
     h.classList.toggle('hidden', !ow.active);
-    G.$('owstars').innerHTML = [1, 2, 3, 4, 5].map(i => `<i class="${i <= ow.wanted ? 'on' : ''}">★</i>`).join('');
+    G.$('owstars').innerHTML = [1, 2, 3, 4, 5].map(i => icon('star', i <= ow.wanted ? 'on' : '')).join('');
     G.$('owmoney').textContent = '$' + Math.round(G.prof.money).toLocaleString('en-US');
     G.$('speedo').classList.toggle('hidden', ow.onFoot);
     G.$('carstat').classList.toggle('hidden', !ow.active);

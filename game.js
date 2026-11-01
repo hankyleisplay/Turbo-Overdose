@@ -6,6 +6,7 @@ import { Music } from './music.js';
 import { connect, onlineAvailable, onlineLocal } from './net.js';
 import { buildCity, CITY } from './city.js';
 import { createOpenWorld } from './openworld.js';
+import { icon, fillIcons } from './icons.js';
 import { TRACKS, trackById, buildWorld, HALF, CURB, WALL, N, ROAD_Y } from './tracks.js';
 import {
   CARS, carById, UPGRADES, MAX_LEVEL, upgradeCost, buildSpec, CUPS, POINTS, PRIZE, DIFF_PAY, DIFF_NAME, TT_REWARD,
@@ -242,6 +243,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyQ') shiftGear(-1);
   if (e.code === 'KeyC') camMode = (camMode + 1) % CAM_MODES;
   if (e.code === 'KeyM') toggleMute();
+  if (e.code === 'KeyH') toggleHints();
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
 });
 addEventListener('keyup', e => { if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = false; });
@@ -299,6 +301,7 @@ function pollPad() {
   pad.gp = gp;
   if (!gp) { pad.throttle = pad.brake = pad.steer = 0; pad.hand = pad.nitro = false; return; }
   const b = i => gp.buttons[i] ? gp.buttons[i].value : 0;
+  if (gp.buttons.some(x => x.value > 0.5) || gp.axes.some(a => Math.abs(a) > 0.4)) lastInput = 'pad';
   const x = gp.axes[0] || 0;
   pad.steer = Math.abs(x) < 0.1 ? 0 : Math.sign(x) * ((Math.abs(x) - 0.1) / 0.9) ** 1.4;
   pad.throttle = b(7); pad.brake = b(6);
@@ -1016,6 +1019,7 @@ function updateHUD() {
   cls('nitro', 'empty', nitroEmptyFlash > 0);
   txt('warn', wrongWay > 1 ? '逆向行駛！' : '');
   if (++hudFrame % 2 === 0) drawMinimap();
+  updateCtrlHint();
 }
 
 function showResults() {
@@ -1037,11 +1041,11 @@ function showResults() {
     const prevBest = session.prevBest;
     if (bestLap < prevBest) {
       earned = TT_REWARD;
-      notes.push(`🏁 新的最佳單圈 ${fmt(bestLap)}（原紀錄 ${fmt(prevBest)}）`);
+      notes.push(`${icon('flag')}新的最佳單圈 ${fmt(bestLap)}（原紀錄 ${fmt(prevBest)}）`);
     } else notes.push(`最佳單圈紀錄：${fmt(bestLap)}`);
     buttons = [['再跑一次', () => startRace(session)], ['回主選單', toMenu]];
   } else {
-    $('resTitle').textContent = me === 1 ? '🏆 冠軍！' : `第 ${me} 名`;
+    $('resTitle').innerHTML = me === 1 ? `${icon('trophy')}冠軍！` : `第 ${me} 名`;
     for (const [i, c] of order.entries()) {
       const time = c.finished ? fmt(c.finishTime) : `第 ${clamp(c.cross, 1, LAPS)} 圈`;
       rows.push([i + 1, `<span class="dot" style="background:${hex(c.color)}"></span>${c.name}`, time, c.isPlayer]);
@@ -1061,7 +1065,7 @@ function showResults() {
         if (won) {
           earned += cup.prize;
           if (!prof.cupsWon.includes(cup.id)) prof.cupsWon.push(cup.id);
-          notes.push(`🏆 ${cup.name} 總冠軍！獎金 ${money(cup.prize)}`);
+          notes.push(`${icon('trophy')}${cup.name} 總冠軍！獎金 ${money(cup.prize)}`);
         } else notes.push(`${cup.name} 結束，總排名第 ${table.findIndex(r => r[0] === '你') + 1}。拿下總冠軍才能解鎖下一個盃賽。`);
         prof.cup = null;
         buttons = [['回生涯模式', () => { toMenu(); openCareer(); }], ['回主選單', toMenu]];
@@ -1072,8 +1076,8 @@ function showResults() {
       buttons = [['再賽一場', () => startRace(session)], ['回主選單', toMenu]];
     }
   }
-  if (rec?.frames.length > 40) buttons.splice(1, 0, ['🎬 觀看重播', enterReplay]);
-  if (earned > 0) notes.unshift(`💰 獎金 <b class="hl">+${money(earned)}</b>`);
+  if (rec?.frames.length > 40) buttons.splice(1, 0, [icon('film') + '觀看重播', enterReplay]);
+  if (earned > 0) notes.unshift(`${icon('coin')}獎金 <b class="hl">+${money(earned)}</b>`);
   prof.money += earned;
   saveProfile(prof);
   $('resSub').textContent = `${tr.name} · ${session.mode === 'tt' ? '計時賽' : DIFF_NAME[session.diff]}`;
@@ -1082,7 +1086,7 @@ function showResults() {
   const box = $('resBtns'); box.innerHTML = '';
   buttons.forEach(([label, fn], i) => {
     const b = document.createElement('button');
-    b.textContent = label; if (i === 0) b.className = 'go';
+    b.innerHTML = label; if (i === 0) b.className = 'go';
     b.onclick = fn; box.appendChild(b);
   });
   showScreen('results');
@@ -1217,7 +1221,7 @@ function updateReplay(dt) {
   replayCamera();
   $('rpBar').style.width = (rp.t / dur * 100).toFixed(1) + '%';
   $('rpTime').textContent = `${fmt(rp.t)} / ${fmt(dur)}`;
-  $('rpSpeed').textContent = rp.paused ? '❚❚ 暫停' : `▶ ${rp.speed}x`;
+  $('rpSpeed').innerHTML = rp.paused ? `${icon('pause')}暫停` : `${icon('play')}${rp.speed}x`;
   $('rpTarget').textContent = rp.target.name;
   $('rpShot').textContent = SHOT_NAME[SHOTS[rp.shot]];
 }
@@ -1342,7 +1346,7 @@ async function ensureNet() {
 let toastTimer = 0;
 function toast(msg) {
   const el = $('toast');
-  el.textContent = msg;
+  el.innerHTML = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
@@ -1351,7 +1355,7 @@ function submitOnline(track, time) {
   if (!onlineAvailable) return;
   ensureNet()
     .then(n => n.submitLap(track, { name: prof.name, time, car: carById(prof.car).name }))
-    .then(ok => { if (ok) toast('🌐 已上傳到線上排行榜'); })
+    .then(ok => { if (ok) toast(icon('upload') + '已上傳到線上排行榜'); })
     .catch(() => {});
 }
 
@@ -1372,7 +1376,7 @@ $('nickInput').onchange = e => {
 };
 async function withBusy(btn, fn) {
   btn.disabled = true;
-  try { await fn(); } catch (e) { $('onlineStatus').textContent = '⚠ ' + (e.message || e); } finally { btn.disabled = false; }
+  try { await fn(); } catch (e) { $('onlineStatus').innerHTML = icon('warn') + escapeHtml(e.message || e); } finally { btn.disabled = false; }
 }
 $('createRoomBtn').onclick = e => withBusy(e.currentTarget, async () => {
   $('onlineStatus').textContent = '連線中…';
@@ -1411,7 +1415,7 @@ const roomPlayers = () => Object.entries(room?.players || {}).sort((a, b) => a[1
 function renderLobby() {
   $('roomCode').textContent = roomCode;
   $('lobbyPlayers').innerHTML = roomPlayers().map(([uid, p]) =>
-    `<div class="lp"><span class="dot" style="background:${hex(p.color)}"></span><b>${escapeHtml(p.name)}</b>${uid === room.host ? ' 👑' : ''}${uid === net.uid ? ' <span class="hl">（你）</span>' : ''}<small>${carById(p.car).name}</small></div>`
+    `<div class="lp"><span class="dot" style="background:${hex(p.color)}"></span><b>${escapeHtml(p.name)}</b>${uid === room.host ? icon('crown', 'host') : ''}${uid === net.uid ? ' <span class="hl">（你）</span>' : ''}<small>${carById(p.car).name}</small></div>`
   ).join('');
   const host = isHost();
   $('lobbyTracks').innerHTML = '';
@@ -1497,7 +1501,7 @@ function updateNet(dt) {
 function renderOnlineResults() {
   const order = standings();
   const me = order.indexOf(player) + 1;
-  $('resTitle').textContent = me === 1 ? '🏆 冠軍！' : `第 ${me} 名`;
+  $('resTitle').innerHTML = me === 1 ? `${icon('trophy')}冠軍！` : `第 ${me} 名`;
   $('resSub').textContent = `${worldDef(session.track).name} · 線上對戰 · 房間 ${roomCode || ''}`;
   $('resTable').innerHTML = order.map((c, i) => {
     const time = c.finished ? fmt(c.finishTime) : '比賽中…';
@@ -1508,11 +1512,11 @@ function renderOnlineResults() {
     const earned = field.length > 1 ? PRIZE[me - 1] * (1 + 0.1 * (field.length - 1)) : 0;
     prof.money += earned;
     saveProfile(prof);
-    $('resNotes').innerHTML = (earned ? `<div>💰 獎金 <b class="hl">+${money(earned)}</b></div>` : '<div>一個人跑不發獎金，找朋友一起來吧！</div>') + `<div>最佳單圈：${fmt(bestLap)}</div>`;
+    $('resNotes').innerHTML = (earned ? `<div>${icon('coin')}獎金 <b class="hl">+${money(earned)}</b></div>` : '<div>一個人跑不發獎金，找朋友一起來吧！</div>') + `<div>最佳單圈：${fmt(bestLap)}</div>`;
     const box = $('resBtns'); box.innerHTML = '';
-    for (const [label, fn, go] of [['回房間', backToLobby, true], ['🎬 觀看重播', enterReplay], ['離開房間', () => leaveOnline()]]) {
+    for (const [label, fn, go] of [['回房間', backToLobby, true], [icon('film') + '觀看重播', enterReplay], ['離開房間', () => leaveOnline()]]) {
       const b = document.createElement('button');
-      b.textContent = label; if (go) b.className = 'go';
+      b.innerHTML = label; if (go) b.className = 'go';
       b.onclick = fn; box.appendChild(b);
     }
   }
@@ -1558,7 +1562,7 @@ async function openBoard() {
       ? `<table>${rows.map((r, i) => `<tr class="${r.uid === net.uid ? 'me' : ''}"><td>${i + 1}</td><td>${escapeHtml(r.name)}</td><td><small>${escapeHtml(r.car || '')}</small></td><td>${fmt(r.time)}</td></tr>`).join('')}</table>`
       : '<p class="muted">這條賽道還沒有人上榜，跑一圈搶第一吧！</p>';
   } catch (e) {
-    list.innerHTML = `<p class="muted">⚠ 讀取失敗：${escapeHtml(e.message || e)}</p>`;
+    list.innerHTML = `<p class="muted">${icon('warn')}讀取失敗：${escapeHtml(e.message || e)}</p>`;
   }
 }
 
@@ -1821,6 +1825,56 @@ function setTransmission(manual) {
   $('touch').classList.toggle('manual', manual);
 }
 
+// ================= 遊戲中的操作提示 =================
+// 依目前情境（比賽 / 手排 / 自由駕駛 / 步行）與最後使用的輸入裝置（鍵盤 / 搖桿 / 觸控）顯示對應按鍵
+let lastInput = isTouch ? 'touch' : 'kb', hintSig = '', hintShownAt = 0;
+addEventListener('keydown', () => { lastInput = 'kb'; }, true);
+$('touch').addEventListener('pointerdown', () => { lastInput = 'touch'; }, true);
+const PAD_NAME = { 'W': 'RT', 'S': 'LT', 'A D': '左搖桿', 'Space': 'B', 'Shift': 'A', 'E Q': 'RB LB', 'F': 'Y', 'R': 'Back', 'C': 'Y', 'P': 'Start', 'W S': 'RT LT' };
+function hintItems() {
+  const free = session.mode === 'free', foot = free && ow.onFoot, manual = !!settings.manual && !foot;
+  if (lastInput === 'touch') {
+    if (foot) return [['方向盤', '轉向'], ['油門 / 煞車', '前進 / 後退'], ['氮氣瓶', '跑步'], ['拉桿', '跳'], ['車門鈕', '上車']];
+    const t = [['方向盤', '左右拖曳轉向'], ['踏板', '油門 / 煞車'], ['拉桿', '甩尾'], ['氮氣瓶', '加速']];
+    if (manual) t.push(['撥片', '換檔']);
+    if (free) t.push(['車門鈕', '下車']);
+    return t;
+  }
+  let k;
+  if (foot) k = [['W S', '走 / 退'], ['A D', '轉向'], ['Shift', '跑'], ['Space', '跳'], ['F', '上車 / 搶車']];
+  else {
+    k = [['W', '油門'], ['S', '煞車'], ['A D', '轉向'], ['Space', '甩尾'], ['Shift', '氮氣']];
+    if (manual) k.push(['E Q', '升 / 降檔']);
+    k.push(free ? ['F', '下車'] : ['R', '回賽道']);
+    if (!(free && lastInput === 'pad')) k.push(['C', '視角']);
+  }
+  k.push(['P', '暫停']);
+  if (lastInput === 'pad') return k.map(([key, what]) => [PAD_NAME[key] || key, what]);
+  k.push(['H', '隱藏提示']);
+  return k;
+}
+function updateCtrlHint() {
+  const el = $('ctrlhint');
+  const free = session.mode === 'free', foot = free && ow.onFoot;
+  const sig = [settings.hints !== false, lastInput, session.mode, foot, !!settings.manual].join('|');
+  if (sig !== hintSig) {
+    hintSig = sig; hintShownAt = performance.now();
+    el.className = lastInput;
+    el.innerHTML = settings.hints === false ? '' : hintItems().map(([key, what]) =>
+      lastInput === 'touch' ? `<span class="kc"><b>${key}</b>${what}</span>` : `<span class="kc">${key.split(' ').map(x => `<kbd>${x}</kbd>`).join('')}${what}</span>`).join('');
+  }
+  // 情境剛改變時完整顯示；鍵盤 / 搖桿之後變淡，觸控幾秒後收起
+  const age = (performance.now() - hintShownAt) / 1000;
+  el.classList.toggle('dim', lastInput !== 'touch' && age > 8);
+  el.classList.toggle('gone', lastInput === 'touch' && age > 8);
+}
+function toggleHints() {
+  settings.hints = settings.hints === false;
+  saveSettings();
+  document.querySelectorAll('#hintsSet button').forEach(b => b.classList.toggle('on', (b.dataset.h === 'on') === settings.hints));
+  toast(settings.hints ? '操作提示：顯示' : '操作提示：隱藏（按 H 再打開）');
+}
+
 // ================= 主迴圈 =================
 const clock = new THREE.Clock();
 function update(dt) {
@@ -2053,7 +2107,7 @@ function openCareer() {
       <small>${cup.tracks.map(id => trackById(id).name).join(' → ')}</small>
       <small>總冠軍獎金 ${money(cup.prize)}${active ? ` · 進行中：第 ${prof.cup.race + 1} / ${cup.tracks.length} 場` : ''}</small>`;
     const btn = document.createElement('button');
-    btn.textContent = locked ? `🔒 先拿下${cupById(cup.requires).name}` : active ? '繼續' : prof.cup ? '改跑這個盃賽' : '開始';
+    btn.innerHTML = locked ? `${icon('lock')}先拿下${cupById(cup.requires).name}` : active ? '繼續' : prof.cup ? '改跑這個盃賽' : '開始';
     btn.disabled = !!locked;
     btn.className = 'small' + (!locked && (active || !prof.cup) ? ' go' : '');
     btn.onclick = () => {
@@ -2213,6 +2267,8 @@ choose('#quals button', 'q', q => {
 document.querySelectorAll('#quals button').forEach(b => b.classList.toggle('on', b.dataset.q === quality));
 document.querySelectorAll('#trans button').forEach(b => b.classList.toggle('on', (b.dataset.t === 'manual') === !!settings.manual));
 choose('#trans button', 't', t => setTransmission(t === 'manual'));
+document.querySelectorAll('#hintsSet button').forEach(b => b.classList.toggle('on', (b.dataset.h === 'on') === (settings.hints !== false)));
+choose('#hintsSet button', 'h', v => { settings.hints = v === 'on'; saveSettings(); });
 $('touch').classList.toggle('manual', !!settings.manual);
 $('tdoor').addEventListener('pointerdown', e => { e.preventDefault(); ow.toggleVehicle(); navigator.vibrate?.(15); });
 document.querySelectorAll('#tshift [data-shift]').forEach(b => b.addEventListener('pointerdown', e => {
@@ -2251,6 +2307,7 @@ $('quitBtn').onclick = () => {
 };
 
 // ---- 啟動 ----
+fillIcons();
 loadTrack('valley');
 setPlayerCar();
 placeOnGrid();

@@ -106,14 +106,14 @@ export function buildCity(renderer) {
       box(20, 0.8, 13, 0, 6, 0, white); box(20.2, 0.35, 13.2, 0, 5.55, 0, red);
       for (const [x, z] of [[-8, -5], [8, -5], [-8, 5], [8, 5]]) box(0.5, 5.4, 0.5, x, 2.7, z, white);
       for (const x of [-4, 4]) { box(1.1, 1.7, 0.7, x, 0.85, 0, red); box(0.9, 0.5, 0.75, x, 1.45, 0, new THREE.MeshStandardMaterial({ color: 0x1b1d22 })); }
-      const sign = new THREE.MeshStandardMaterial({ map: signTex(renderer, '⛽ 加油站', '#d8312a'), emissive: 0xffffff, emissiveMap: null, emissiveIntensity: 0 });
+      const sign = new THREE.MeshStandardMaterial({ map: signTex(renderer, '加油站', '#d8312a'), emissive: 0xffffff, emissiveMap: null, emissiveIntensity: 0 });
       box(6, 1.5, 0.3, 12, 8, -14, sign); box(0.35, 8, 0.35, 12, 4, -14, white);
       signs.push(sign);
     } else {
       const wall = new THREE.MeshStandardMaterial({ color: 0x5a6470, roughness: 0.8 });
       box(24, 8, 14, 0, 4, 10, wall);
       box(10, 6, 0.4, 0, 3, 2.9, new THREE.MeshStandardMaterial({ color: 0x23272e, roughness: 0.6 }));
-      const sign = new THREE.MeshStandardMaterial({ map: signTex(renderer, '🔧 修車・烤漆', '#1f7cff'), emissive: 0xffffff, emissiveIntensity: 0 });
+      const sign = new THREE.MeshStandardMaterial({ map: signTex(renderer, '修車・烤漆', '#1f7cff'), emissive: 0xffffff, emissiveIntensity: 0 });
       box(12, 2, 0.3, 0, 9.4, 2.9, sign);
       signs.push(sign);
       b.buildings.push({ x0: cx - 12, x1: cx + 12, z0: cz + 3, z1: cz + 17 });

@@ -56,6 +56,7 @@
     <div id="owmission"></div>
   </div>
   <div id="owhint"></div>
+  <div id="ctrlhint"></div>
   <div id="center"></div>
   <div id="warn"></div>
 </div>
@@ -79,7 +80,7 @@
 
 <div id="photohud" class="hidden">
   <div class="phpanel">
-    <b>📷 拍照模式</b>
+    <b><i data-ic="camera"></i>拍照模式</b>
     <div class="phrow"><span>濾鏡</span>
       <div id="filters" class="choices">
         <button data-f="none" class="on">原色</button><button data-f="bw">黑白</button><button data-f="retro">復古</button><button data-f="cinema">電影</button><button data-f="neon">霓虹</button>
@@ -196,18 +197,18 @@
 
 <div id="menu" class="screen">
   <div class="card">
-    <div class="wallet">💰 <span class="money"></span></div>
+    <div class="wallet"><i data-ic="coin"></i><span class="money"></span></div>
     <h1>TURBO<br><span>OVERDOSE</span></h1>
     <p class="sub">3D 街頭賽車</p>
     <div class="menubtns">
-      <button id="btnCareer" class="go big">生涯錦標賽</button>
-      <button id="btnQuick" class="big">快速比賽</button>
-      <button id="btnTT" class="big">計時賽</button>
-      <button id="btnFree" class="big">🏙️ 自由駕駛</button>
-      <button id="btnOnline" class="big">🌐 線上對戰</button>
-      <button id="btnGarage" class="big">車庫</button>
-      <button id="btnBoard">🏆 線上排行榜</button>
-      <button id="btnSettings">設定與操作說明</button>
+      <button id="btnCareer" class="go big"><i data-ic="trophy"></i>生涯錦標賽</button>
+      <button id="btnQuick" class="big"><i data-ic="flag"></i>快速比賽</button>
+      <button id="btnTT" class="big"><i data-ic="stopwatch"></i>計時賽</button>
+      <button id="btnFree" class="big"><i data-ic="city"></i>自由駕駛</button>
+      <button id="btnOnline" class="big"><i data-ic="globe"></i>線上對戰</button>
+      <button id="btnGarage" class="big"><i data-ic="car"></i>車庫</button>
+      <button id="btnBoard"><i data-ic="podium"></i>線上排行榜</button>
+      <button id="btnSettings"><i data-ic="gear"></i>設定與操作說明</button>
     </div>
   </div>
 </div>
@@ -231,7 +232,7 @@
 
 <div id="career" class="screen hidden">
   <div class="card wide">
-    <div class="wallet">💰 <span class="money"></span></div>
+    <div class="wallet"><i data-ic="coin"></i><span class="money"></span></div>
     <h2>生涯錦標賽</h2>
     <p class="sub">每個盃賽 3 場，依名次拿積分（10 / 8 / 6 / 4 / 3 / 2）。拿下總冠軍才能解鎖下一個盃賽。</p>
     <div id="cupList" class="cuplist"></div>
@@ -241,7 +242,7 @@
 
 <div id="garage" class="screen side hidden">
   <div class="card panel">
-    <div class="wallet">💰 <span class="money"></span></div>
+    <div class="wallet"><i data-ic="coin"></i><span class="money"></span></div>
     <h2>車庫</h2>
     <div id="carList" class="carlist"></div>
     <div id="carInfo"></div>
@@ -257,7 +258,7 @@
 
 <div id="online" class="screen hidden">
   <div class="card">
-    <h2>🌐 線上對戰</h2>
+    <h2><i data-ic="globe"></i>線上對戰</h2>
     <p class="sub" id="onlineStatus"></p>
     <div class="row"><div class="rlabel">暱稱</div><input id="nickInput" class="textin" maxlength="12"></div>
     <div class="onlinebox">
@@ -284,7 +285,7 @@
 
 <div id="board" class="screen hidden">
   <div class="card">
-    <h2>🏆 線上排行榜</h2>
+    <h2><i data-ic="podium"></i>線上排行榜</h2>
     <p class="sub">每位玩家在每條賽道的最佳單圈，前 20 名</p>
     <div id="boardTabs" class="choices"></div>
     <div id="boardList" class="boardlist"></div>
@@ -299,7 +300,7 @@
   <div id="shopBtns" class="btns"></div>
   <small>開走就會離開</small>
 </div>
-<div id="rotatehint">📱 把手機轉成橫向，視野更大、更好操作</div>
+<div id="rotatehint"><i data-ic="rotate"></i>把手機轉成橫向，視野更大、更好操作</div>
 
 <div id="settings" class="screen hidden">
   <div class="card">
@@ -308,6 +309,9 @@
       <div id="quals" class="choices">
         <button data-q="low">低</button><button data-q="medium">中</button><button data-q="high">高</button>
       </div>
+    </div>
+    <div class="row"><div class="rlabel">操作提示</div>
+      <div id="hintsSet" class="choices"><button data-h="on">顯示</button><button data-h="off">隱藏</button></div>
     </div>
     <div class="row"><div class="rlabel">變速箱</div>
       <div id="trans" class="choices"><button data-t="auto">自排</button><button data-t="manual">手排</button></div>
@@ -318,9 +322,9 @@
     <div class="help">
       <b>W / ↑</b> 油門　<b>S / ↓</b> 煞車/倒車　<b>A D / ← →</b> 轉向<br>
       <b>空白鍵</b> 甩尾（集氮氣）　<b>Shift</b> 氮氣加速　<b>R</b> 回到賽道<br>
-      <b>C</b> 切換視角　<b>M</b> 靜音　<b>P / Esc</b> 暫停<br>
+      <b>C</b> 切換視角　<b>M</b> 靜音　<b>P / Esc</b> 暫停　<b>H</b> 顯示 / 隱藏操作提示<br>
       <b>E / Q</b> 手排升檔 / 降檔（1 檔再降是倒檔）　<b>F</b> 自由駕駛中上下車 / 搶車<br>
-      🎮 搖桿：<b>RT</b> 油門　<b>LT</b> 煞車　<b>左搖桿</b> 轉向　<b>A</b> 氮氣　<b>B / X</b> 甩尾　<b>RB / LB</b> 升降檔　<b>Y</b> 視角（自由駕駛中是上下車）
+      <i data-ic="gamepad"></i>搖桿：<b>RT</b> 油門　<b>LT</b> 煞車　<b>左搖桿</b> 轉向　<b>A</b> 氮氣　<b>B / X</b> 甩尾　<b>RB / LB</b> 升降檔　<b>Y</b> 視角（自由駕駛中是上下車）
     </div>
     <div class="btns">
       <button data-back class="go">返回</button>
@@ -345,7 +349,7 @@
     <div class="menubtns">
       <button id="resumeBtn" class="go">繼續</button>
       <button id="restartBtn">重新開始</button>
-      <button id="photoBtn">📷 拍照模式</button>
+      <button id="photoBtn"><i data-ic="camera"></i>拍照模式</button>
       <button id="quitBtn">回主選單</button>
     </div>
   </div>
