@@ -195,21 +195,35 @@
   </div>
 </div>
 
-<div id="menu" class="screen">
-  <div class="card">
-    <div class="wallet"><i data-ic="coin"></i><span class="money"></span></div>
-    <h1>TURBO<br><span>OVERDOSE</span></h1>
-    <p class="sub">3D 街頭賽車</p>
-    <div class="menubtns">
-      <button id="btnCareer" class="go big"><i data-ic="trophy"></i>生涯錦標賽</button>
-      <button id="btnQuick" class="big"><i data-ic="flag"></i>快速比賽</button>
-      <button id="btnTT" class="big"><i data-ic="stopwatch"></i>計時賽</button>
-      <button id="btnFree" class="big"><i data-ic="city"></i>自由駕駛</button>
-      <button id="btnOnline" class="big"><i data-ic="globe"></i>線上對戰</button>
-      <button id="btnGarage" class="big"><i data-ic="car"></i>車庫</button>
-      <button id="btnBoard"><i data-ic="podium"></i>線上排行榜</button>
-      <button id="btnSettings"><i data-ic="gear"></i>設定與操作說明</button>
+<div id="menu" class="screen mainmenu">
+  <div class="mm-left">
+    <div class="mm-logo">
+      <div class="mm-l1">TURBO</div>
+      <div class="mm-l2">OVERDOSE</div>
+      <div class="mm-speed"><i></i><i></i><i></i></div>
     </div>
+    <nav class="mm-list">
+      <button id="btnCareer" class="plate primary"><span class="pn">01</span><i data-ic="trophy"></i><span class="pt"><b>生涯錦標賽</b><small>三個盃賽，一路爭奪總冠軍</small></span><span class="chev"></span></button>
+      <button id="btnQuick" class="plate"><span class="pn">02</span><i data-ic="flag"></i><span class="pt"><b>快速比賽</b><small>自選賽道與難度，馬上開跑</small></span><span class="chev"></span></button>
+      <button id="btnTT" class="plate"><span class="pn">03</span><i data-ic="stopwatch"></i><span class="pt"><b>計時賽</b><small>挑戰自己的幽靈車</small></span><span class="chev"></span></button>
+      <button id="btnFree" class="plate"><span class="pn">04</span><i data-ic="city"></i><span class="pt"><b>自由駕駛</b><small>城市開放世界・任務・警察</small></span><span class="chev"></span></button>
+      <button id="btnOnline" class="plate"><span class="pn">05</span><i data-ic="globe"></i><span class="pt"><b>線上對戰</b><small>開房間和朋友即時比賽</small></span><span class="chev"></span></button>
+      <button id="btnGarage" class="plate"><span class="pn">06</span><i data-ic="car"></i><span class="pt"><b>車庫</b><small>買車・改裝・烤漆</small></span><span class="chev"></span></button>
+    </nav>
+    <div class="mm-foot">
+      <div class="mm-chip wallet"><i data-ic="coin"></i><span class="money"></span></div>
+      <button id="btnBoard" class="mm-chip"><i data-ic="podium"></i>排行榜</button>
+      <button id="btnSettings" class="mm-chip"><i data-ic="gear"></i>設定</button>
+    </div>
+  </div>
+  <div class="mm-car"><small>目前座車</small><b id="mmCarName">Street GT</b></div>
+</div>
+
+<div id="confirmBox" class="screen hidden">
+  <div class="card small">
+    <h2>確認</h2>
+    <p id="confirmMsg" class="sub"></p>
+    <div class="btns"><button id="confirmYes" class="go danger-go">確定</button><button id="confirmNo">取消</button></div>
   </div>
 </div>
 

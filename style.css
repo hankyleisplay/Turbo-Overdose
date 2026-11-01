@@ -427,3 +427,186 @@ h2 .ic { width: 1em; height: 1em; }
 #ctrlhint.touch b { color: #ffd23f; font-weight: 700; }
 @media (max-height: 450px) and (min-width: 701px) { #ctrlhint.touch { top: 30%; max-width: 60vw; } }
 @media (max-width: 700px) { #owmission { font-size: 11px; max-width: 46vw; margin: 4px auto 0; line-height: 1.5; } #owmoney { font-size: 16px; } }
+
+/* ================= 賽車主題（覆蓋前面的預設樣式） ================= */
+:root {
+  --acc: #ff4d1f; --acc2: #ff1f5a; --gold: #ffd23f;
+  --carbon: repeating-linear-gradient(45deg, rgba(255,255,255,.025) 0 3px, transparent 3px 6px), repeating-linear-gradient(-45deg, rgba(0,0,0,.25) 0 3px, transparent 3px 6px);
+  --skew: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+}
+/* 捲軸：細細一條橘色 */
+/* Chrome 有設標準屬性時會忽略 ::-webkit-scrollbar（並露出上下箭頭），所以標準屬性只給 Firefox */
+@supports (-moz-appearance: none) { * { scrollbar-width: thin; scrollbar-color: var(--acc) transparent; } }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: linear-gradient(var(--acc), var(--acc2)); border-radius: 3px; }
+::-webkit-scrollbar-button { display: none; height: 0; }
+button { -webkit-tap-highlight-color: transparent; }
+button:focus { outline: none; }
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+
+/* ---------- 面板：碳纖維、切角、標題帶格子旗 ---------- */
+.card {
+  background: linear-gradient(160deg, rgba(16,19,27,.96), rgba(9,11,17,.94)), var(--carbon);
+  border: 0; border-radius: 0; box-shadow: none;
+  clip-path: polygon(0 0, calc(100% - 28px) 0, 100% 28px, 100% 100%, 28px 100%, 0 calc(100% - 28px));
+  padding-top: 30px;
+}
+.card::before {
+  content: ""; position: absolute; left: 0; top: 0; height: 4px; width: calc(100% - 28px);
+  background: linear-gradient(90deg, var(--acc), var(--acc2) 60%, transparent);
+}
+.card h2 {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+  font-family: Orbitron, "Noto Sans TC", sans-serif; font-style: italic; font-weight: 900; letter-spacing: 2px; font-size: 26px;
+  margin: 0 0 6px;
+}
+.card h2::after {
+  content: ""; display: block; width: 46px; height: 12px; margin-left: 10px; transform: skewX(-20deg);
+  background: repeating-conic-gradient(#fff 0 25%, #16181d 0 50%) 0 0 / 12px 12px;
+  opacity: .85;
+}
+.card.panel h2 { justify-content: flex-start; }
+.sub { font-size: 14px; }
+
+/* ---------- 按鈕：斜切賽車牌 ---------- */
+.btns button, .choices button, .menubtns button, #muteBtn, .cupcard button, .uprow button, .onlinebox button,
+#rpExit, #photohud button, #shop button, #lobbyTracks button, #boardTabs button {
+  font: inherit; font-weight: 700; font-style: italic; letter-spacing: .5px; color: #fff; cursor: pointer;
+  background: rgba(255,255,255,.09); border: 0 !important; border-radius: 0 !important;
+  clip-path: var(--skew); padding: 10px 24px; transition: background .15s, transform .15s;
+}
+.btns button:hover:not(:disabled), .choices button:hover:not(:disabled), .menubtns button:hover:not(:disabled), #muteBtn:hover,
+.cupcard button:hover:not(:disabled), .uprow button:hover:not(:disabled), .onlinebox button:hover:not(:disabled), #shop button:hover:not(:disabled) {
+  background: rgba(255,255,255,.18); transform: translateX(3px);
+}
+.choices button.on, #lobbyTracks button.on, #boardTabs button.on { background: var(--acc); color: #fff; }
+button.go, .onlinebox .go {
+  background: linear-gradient(100deg, var(--acc), var(--acc2)) !important; box-shadow: none !important;
+  position: relative;
+}
+button.go::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(-60deg, rgba(255,255,255,.1) 0 8px, transparent 8px 18px);
+}
+button.danger, button.danger-go { background: linear-gradient(100deg, #b3141f, #ff2d3d) !important; }
+.swatch { clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); border-radius: 0 !important; width: 40px; height: 30px; }
+.swatch.on { outline: 2px solid #fff; outline-offset: 2px; clip-path: none; transform: skewX(-12deg); }
+
+/* ---------- 卡片類：賽道、車款、盃賽 ---------- */
+.trackcard, .carbtn, .cupcard {
+  border: 0 !important; border-radius: 0 !important; background: rgba(255,255,255,.05);
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%); position: relative;
+}
+.trackcard::before, .carbtn::before, .cupcard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: rgba(255,255,255,.15); }
+.trackcard.on, .carbtn.on, .cupcard.active { background: rgba(255,77,31,.14); }
+.trackcard.on::before, .carbtn.on::before, .cupcard.active::before { background: var(--acc); }
+.trackcard canvas { border-radius: 0; clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%); }
+.tag { border-radius: 0; clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%); padding: 2px 10px; }
+.statrow .bar, #nitro, #rpm, .lbar, .rpbar, #carstat .sbar { border-radius: 0; transform: skewX(-20deg); }
+.statrow .bar i { background: linear-gradient(90deg, var(--acc), var(--gold)); }
+
+/* ---------- 滑桿、文字框 ---------- */
+input[type=range] {
+  -webkit-appearance: none; appearance: none; width: 220px; height: 24px; background: transparent; cursor: pointer; --p: 50%;
+}
+input[type=range]::-webkit-slider-runnable-track {
+  height: 8px; transform: skewX(-20deg);
+  background: linear-gradient(90deg, var(--acc), var(--acc2) var(--p), rgba(255,255,255,.14) var(--p));
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 14px; height: 24px; margin-top: -8px; background: #fff; border: 0;
+  clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+}
+input[type=range]::-moz-range-track { height: 8px; background: rgba(255,255,255,.14); border: 0; }
+input[type=range]::-moz-range-progress { height: 8px; background: linear-gradient(90deg, var(--acc), var(--acc2)); }
+input[type=range]::-moz-range-thumb { width: 12px; height: 24px; border: 0; border-radius: 0; background: #fff; }
+input[type=range]:focus { outline: none; }
+.textin {
+  border: 0 !important; border-bottom: 3px solid rgba(255,255,255,.25) !important; border-radius: 0 !important;
+  background: rgba(255,255,255,.07) !important; clip-path: var(--skew); padding: 9px 18px !important; font-weight: 700;
+}
+.textin:focus { border-bottom-color: var(--acc) !important; background: rgba(255,77,31,.1) !important; outline: none; }
+.textin::placeholder { color: rgba(255,255,255,.35); }
+
+/* ---------- 主選單 ---------- */
+.screen.mainmenu { justify-content: flex-start; align-items: stretch; padding: 0; background: linear-gradient(90deg, rgba(6,8,14,.92) 0%, rgba(6,8,14,.75) 32%, rgba(6,8,14,0) 58%); }
+.mm-left { width: min(470px, 100%); display: flex; flex-direction: column; justify-content: center; gap: 22px; padding: 28px 0 24px 44px; animation: mmIn .5s cubic-bezier(.2,.9,.3,1); }
+@keyframes mmIn { from { opacity: 0; transform: translateX(-40px); } }
+.mm-logo { position: relative; font-family: Orbitron, sans-serif; font-style: italic; font-weight: 900; line-height: .95; letter-spacing: 3px; }
+.mm-l1 { font-size: 46px; }
+.mm-l2 { font-size: 46px; color: var(--acc); text-shadow: 0 0 28px rgba(255,77,31,.7); }
+.mm-speed { display: flex; gap: 6px; margin-top: 12px; }
+.mm-speed i { display: block; height: 5px; background: linear-gradient(90deg, var(--acc), var(--acc2)); transform: skewX(-30deg); }
+.mm-speed i:nth-child(1) { width: 120px; } .mm-speed i:nth-child(2) { width: 46px; opacity: .7; } .mm-speed i:nth-child(3) { width: 18px; opacity: .45; }
+.mm-list { display: flex; flex-direction: column; gap: 10px; }
+.plate {
+  position: relative; display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 26px 12px 22px;
+  border: 0; color: #fff; font: inherit; text-align: left; cursor: pointer; overflow: hidden;
+  background: linear-gradient(90deg, rgba(22,26,35,.95), rgba(22,26,35,.75)), var(--carbon);
+  clip-path: polygon(16px 0, 100% 0, calc(100% - 16px) 100%, 0 100%);
+  transition: transform .2s cubic-bezier(.2,.9,.3,1.2), background .2s;
+  animation: plateIn .45s backwards;
+}
+.mm-list .plate:nth-child(2) { animation-delay: .04s; } .mm-list .plate:nth-child(3) { animation-delay: .08s; }
+.mm-list .plate:nth-child(4) { animation-delay: .12s; } .mm-list .plate:nth-child(5) { animation-delay: .16s; } .mm-list .plate:nth-child(6) { animation-delay: .2s; }
+@keyframes plateIn { from { opacity: 0; transform: translateX(-30px); } }
+.plate::before { content: ""; position: absolute; left: 10px; top: 0; bottom: 0; width: 5px; background: rgba(255,255,255,.18); transform: skewX(-20deg); transition: background .2s; }
+.plate::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 50%; pointer-events: none;
+  background: linear-gradient(105deg, transparent, rgba(255,255,255,.22), transparent); transform: skewX(-20deg);
+}
+.plate:hover, .plate:focus-visible { transform: translateX(12px); background: linear-gradient(90deg, rgba(255,77,31,.35), rgba(22,26,35,.8)), var(--carbon); outline: none; }
+.plate:hover::before { background: var(--acc); }
+.plate:hover::after { animation: sweep .6s; }
+@keyframes sweep { to { left: 120%; } }
+.plate .pn { font-family: Orbitron, monospace; font-size: 12px; font-weight: 700; opacity: .45; width: 20px; margin-left: 8px; }
+.plate > .ic { width: 26px; height: 26px; margin: 0; color: var(--gold); }
+.plate .pt { flex: 1; }
+.plate .pt b { display: block; font-size: 21px; font-weight: 900; font-style: italic; letter-spacing: 1px; }
+.plate .pt small { display: block; font-size: 12px; opacity: .6; margin-top: 2px; }
+.plate .chev { width: 22px; height: 16px; background: linear-gradient(currentColor, currentColor); opacity: .5;
+  clip-path: polygon(0 0, 30% 0, 60% 50%, 30% 100%, 0 100%, 30% 50%, 40% 0, 70% 0, 100% 50%, 70% 100%, 40% 100%, 70% 50%); transition: transform .2s, opacity .2s; }
+.plate:hover .chev { transform: translateX(6px); opacity: 1; color: var(--gold); }
+.plate.primary { background: linear-gradient(100deg, var(--acc), var(--acc2)); }
+.plate.primary::before { background: #fff; }
+.plate.primary > .ic { color: #fff; }
+.plate.primary .pn { opacity: .7; }
+.plate.primary .pt small { opacity: .85; }
+.plate.primary:hover { background: linear-gradient(100deg, #ff6a3a, #ff3a72); }
+.plate.primary .pt::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(-60deg, rgba(255,255,255,.09) 0 8px, transparent 8px 18px); }
+.mm-foot { display: flex; gap: 10px; flex-wrap: wrap; }
+.mm-chip {
+  display: inline-flex; align-items: center; gap: 2px; font: inherit; font-weight: 700; font-style: italic; color: #fff; cursor: pointer;
+  border: 0; padding: 9px 20px; background: rgba(255,255,255,.08); clip-path: var(--skew); transition: background .15s;
+}
+.mm-chip:hover { background: rgba(255,255,255,.18); }
+.mm-chip.wallet { position: static; cursor: default; color: var(--gold); font-family: Orbitron, monospace; font-style: normal; background: rgba(255,210,63,.1); }
+.mm-car {
+  position: absolute; right: 44px; bottom: 34px; text-align: right; pointer-events: none;
+  font-family: Orbitron, "Noto Sans TC", sans-serif; text-shadow: 0 2px 12px rgba(0,0,0,.8); animation: mmIn .6s .2s backwards;
+}
+.mm-car small { display: block; font-size: 12px; letter-spacing: 3px; opacity: .7; }
+.mm-car b { display: block; font-size: 34px; font-style: italic; font-weight: 900; letter-spacing: 2px; border-right: 5px solid var(--acc); padding-right: 12px; }
+
+@media (max-height: 700px) {
+  .mm-left { gap: 14px; padding-top: 16px; }
+  .plate { padding: 8px 22px 8px 18px; }
+  .plate .pt small { display: none; }
+  .mm-l1, .mm-l2 { font-size: 36px; }
+}
+@media (max-width: 700px) {
+  .screen.mainmenu { align-items: flex-end; background: linear-gradient(0deg, rgba(6,8,14,.95) 0%, rgba(6,8,14,.8) 55%, rgba(6,8,14,0) 75%); }
+  .mm-left { padding: 16px 16px 18px 20px; gap: 12px; width: 100%; }
+  .mm-logo { position: fixed; top: 22px; left: 26px; }
+  .mm-l1, .mm-l2 { font-size: 34px; }
+  .plate { padding: 8px 20px 8px 14px; }
+  .plate .pt b { font-size: 17px; }
+  .plate .pt small { display: none; }
+  .mm-car { right: 18px; bottom: auto; top: 140px; }
+  .mm-car b { font-size: 22px; }
+}
+#confirmBox { z-index: 9; background: rgba(4,6,12,.75); }
+
+.rlabel { width: 72px; flex: none; text-align: right; }
+.row { gap: 14px; }

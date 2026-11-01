@@ -528,6 +528,7 @@ function resetToTrack(c) {
 function startRace(sess = session) { fadeThen(() => beginRace(sess)); }
 function beginRace(sess = session) {
   session = sess;
+  camera.clearViewOffset();
   document.activeElement?.blur();
   initAudio();
   loadTrack(session.track);
@@ -1880,11 +1881,14 @@ const clock = new THREE.Clock();
 function update(dt) {
   pollPad();
   if (state === 'menu') {
-    menuAngle += dt * 0.08;
-    camera.position.set(center.x + Math.cos(menuAngle) * 520, 230, center.z + Math.sin(menuAngle) * 520);
-    camera.lookAt(center);
-    sun.position.copy(center).add(SUN_OFF); sun.target.position.copy(center);
+    menuAngle += dt * 0.12;
+    const c = player.pos;
+    camera.position.set(c.x + Math.cos(menuAngle) * 10.5, 2.3, c.z + Math.sin(menuAngle) * 10.5);
+    camera.lookAt(c.x, 0.7, c.z);
+    if (Math.abs(camera.fov - 40) > 0.1) { camera.fov = 40; camera.updateProjectionMatrix(); }
+    sun.position.copy(c).add(SUN_OFF); sun.target.position.copy(c);
     post.speed.uniforms.amount.value = 0;
+    for (const w of player.model.wheels) w.rotation.x = 0;
     return;
   }
   if (state === 'intro') {
@@ -2002,10 +2006,21 @@ function frame() {
 
 // ================= 選單與介面 =================
 const SCREENS = ['menu', 'setup', 'career', 'garage', 'settings', 'results', 'online', 'lobby', 'board'];
+// 主選單 / 子選單時把車放到起跑線前展示，畫面往右推讓出左邊的選單
+function menuStage() {
+  if (state !== 'menu') return;
+  if (W.isCity) loadTrack('valley');
+  showcase(prof.car);
+  $('mmCarName').textContent = carById(prof.car).name;
+  const w = innerWidth, h = innerHeight;
+  if (w > 700) camera.setViewOffset(w, h, -w * 0.2, 0, w, h);
+  else camera.setViewOffset(w, h, 0, h * 0.12, w, h);
+}
 function showScreen(id) {
   for (const s of SCREENS) $(s).classList.toggle('hidden', s !== id);
   $('pausemenu').classList.add('hidden');
   document.querySelectorAll('.money').forEach(e => { e.textContent = money(prof.money); });
+  if (id === 'menu') menuStage();
 }
 const openScreen = () => SCREENS.find(s => !$(s).classList.contains('hidden'));
 function silenceRace() {
@@ -2170,6 +2185,7 @@ function leaveGarage() {
   camera.clearViewOffset();
   setPlayerCar();
   placeOnGrid();
+  menuStage();
   camera.fov = 60; camera.updateProjectionMatrix();
 }
 function renderGarage() {
@@ -2278,8 +2294,17 @@ document.querySelectorAll('#tshift [data-shift]').forEach(b => b.addEventListene
   navigator.vibrate?.(12);
 }));
 $('muteBtn').onclick = () => { toggleMute(); $('muteBtn').textContent = muted ? '音效：關' : '音效：開'; };
-$('resetBtn').onclick = () => {
-  if (!confirm('確定要清除所有進度（金錢、車輛、改裝、盃賽與紀錄）嗎？')) return;
+function askConfirm(msg) {
+  return new Promise(resolve => {
+    $('confirmMsg').textContent = msg;
+    $('confirmBox').classList.remove('hidden');
+    const done = v => { $('confirmBox').classList.add('hidden'); resolve(v); };
+    $('confirmYes').onclick = () => done(true);
+    $('confirmNo').onclick = () => done(false);
+  });
+}
+$('resetBtn').onclick = async () => {
+  if (!await askConfirm('確定要清除所有進度（金錢、車輛、改裝、盃賽與紀錄）嗎？這個動作無法復原。')) return;
   try {
     localStorage.removeItem('turbo-overdose-profile');
     for (const t of TRACKS) localStorage.removeItem('turbo-overdose-ghost-' + t.id);
@@ -2308,6 +2333,8 @@ $('quitBtn').onclick = () => {
 
 // ---- 啟動 ----
 fillIcons();
+const paintRange = el => el.style.setProperty('--p', ((el.value - el.min) / (el.max - el.min) * 100) + '%');
+document.querySelectorAll('input[type=range]').forEach(el => { paintRange(el); el.addEventListener('input', () => paintRange(el)); });
 loadTrack('valley');
 setPlayerCar();
 placeOnGrid();
