@@ -98,7 +98,7 @@ export class Vehicle {
     const slip = Math.abs(this.beta);
     const want = u > 11 && (
       (ctl.hand && Math.abs(ctl.steer) > 0.2) ||
-      (this.drift > 0.15 && ctl.throttle > 0.3 && slip > 0.06 && ctl.steer * Math.sign(this.beta) > -0.35));   // 甩尾只由手煞車起甩；反打就結束
+      (this.drift > 0.15 && ctl.throttle > 0.3 && slip > 0.06 && ctl.steer * Math.sign(this.beta) > 0.15));   // 甩尾只由手煞車起甩；要持續往彎內打才維持，方向回正或反打就結束
     this.drift += ((want ? 1 : 0) - this.drift) * Math.min(1, (want ? 7 : 2.2) * dt);
     const steerCap = s.steerMax / (1 + Math.abs(u) / s.steerFade);
     let target = -ctl.steer * steerCap;
@@ -212,7 +212,7 @@ export class Vehicle {
     if (this.drift > 0.05 && Math.abs(b) > 0.03 && u > 8) {
       const side = Math.sign(b);                       // 負 = 向左甩
       const into = clamp(ctl.steer * side, -1, 1);     // 1 = 往彎內打
-      const goal = side * (0.38 + 0.2 * into);
+      const goal = side * Math.max(0, 0.12 + 0.46 * into);   // 往彎內打到底 ≈ 0.58，回正時目標趨近 0，車子自然拉直
       const pathRate = (Fy / m) / Math.max(5, Math.hypot(u, vl));
       const rWant = pathRate + 3.2 * (b - goal);
       this.r += (rWant - this.r) * Math.min(1, 9 * dt) * this.drift;

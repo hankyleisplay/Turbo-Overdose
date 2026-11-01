@@ -1892,6 +1892,7 @@ function updateDriftScore(dt, v, slide, surf) {
     $('driftMult').textContent = mult > 1 ? '×' + mult : '';
     el.className = 'on';
   } else if (driftPts > 0 && (driftHold += dt) > 0.7) bankDrift();
+  else if (driftPts === 0 && el.className === 'on') el.className = '';   // 保險：沒有在甩就不要留著 DRIFT 字樣
 }
 function bankDrift() {
   const pts = Math.round(driftPts), el = $('drift');
@@ -1905,7 +1906,7 @@ function bankDrift() {
   setTimeout(() => { if (el.className === 'bank') el.className = ''; }, 1400);
 }
 function driftFail() {
-  if (driftPts < 50) { driftPts = driftTime = 0; return; }
+  if (driftPts < 50) { driftPts = driftTime = driftHold = 0; $('drift').className = ''; return; }
   driftPts = driftTime = driftHold = 0;
   $('driftPts').textContent = '甩尾失敗';
   $('driftMult').textContent = '';
