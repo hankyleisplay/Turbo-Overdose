@@ -34,7 +34,12 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
+      # ubuntu runner 已內建 Android SDK；這裡只接受授權並補上需要的版本
+      - name: Prepare Android SDK
+        run: |
+          SDKM="$(command -v sdkmanager || ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-36" "build-tools;36.0.0" > /dev/null
 
       - name: Install Capacitor
         working-directory: native
