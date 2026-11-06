@@ -6,6 +6,14 @@
 <title>Turbo Overdose</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;900&display=swap" rel="stylesheet">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b0f1c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Turbo Overdose">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">
 { "imports": {
@@ -352,6 +360,7 @@
     <div class="row"><div class="rlabel">音樂</div><input type="range" id="musicVol" min="0" max="100"></div>
     <div class="row"><div class="rlabel">音效</div><input type="range" id="sfxVol" min="0" max="100"></div>
     <div class="row"><button id="muteBtn">音效：開</button></div>
+    <div class="row hidden" id="installRow"><button id="installBtn" class="go small">安裝成 App（全螢幕、可離線、自動更新）</button></div>
     <div class="help">
       <b>W / ↑</b> 油門　<b>S / ↓</b> 煞車/倒車　<b>A D / ← →</b> 轉向<br>
       <b>空白鍵</b> 甩尾（集氮氣）　<b>Shift</b> 氮氣加速　<b>R</b> 回到賽道<br>
@@ -391,5 +400,6 @@
 </div>
 
 <script type="module" src="game.js"></script>
+<script src="pwa.js" defer></script>
 </body>
 </html>
