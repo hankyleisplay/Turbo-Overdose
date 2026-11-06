@@ -75,16 +75,23 @@ jobs:
         working-directory: native/android
         run: ./gradlew assembleRelease -PappVersionCode=${{ github.run_number }} -PappVersionName=1.0.${{ github.run_number }}
 
-      - name: Publish to release "apk-latest"
+      - name: Publish releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp native/android/app/build/outputs/apk/release/app-release.apk TurboOverdose.apk
+          VER="1.0.${{ github.run_number }}"
+          # 1) 帶版本號的正式 Release（保留歷史，標為最新）
+          gh release create "v$VER" TurboOverdose.apk \
+            --title "Turbo Overdose Android App v$VER" \
+            --notes "Android APK v$VER。下載後安裝即可；遊戲內容會自動更新，之後不需要重新安裝。" \
+            --target "${{ github.sha }}" --latest
+          # 2) 固定網址的 apk-latest（永遠是最新那一版，下載連結不用改）
           gh release delete apk-latest --yes --cleanup-tag || true
           gh release create apk-latest TurboOverdose.apk \
-            --title "Turbo Overdose Android App" \
-            --notes "最新版 Android APK（第 ${{ github.run_number }} 次建置）。下載後安裝即可；遊戲內容會自動更新，之後不需要重新安裝。" \
-            --target "${{ github.sha }}"
+            --title "Turbo Overdose Android App（最新版）" \
+            --notes "永遠指向最新版 APK（v$VER）。" \
+            --target "${{ github.sha }}" --latest=false
 
       - uses: actions/upload-artifact@v4
         with:
