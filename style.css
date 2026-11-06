@@ -3,6 +3,7 @@ html, body {
   margin: 0; height: 100%; overflow: hidden; background: #0b1020; color: #fff;
   font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
   user-select: none; -webkit-user-select: none; touch-action: none;
+  overscroll-behavior: none; -webkit-touch-callout: none;   /* 不要下拉重新整理、長按選單 */
 }
 #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 .hidden { display: none !important; }
@@ -17,6 +18,7 @@ body.boosting #nitrofill { animation: nitroPulse .25s infinite alternate; }
 body.boosting .nlabel { color: #7fe3ff; opacity: 1; }
 @keyframes nitroPulse { from { filter: brightness(1); } to { filter: brightness(1.8); } }
 #hud { position: fixed; inset: 0; pointer-events: none; }
+@supports (padding: env(safe-area-inset-left)) { #hud, #touch { left: env(safe-area-inset-left); right: env(safe-area-inset-right); } #hud { top: env(safe-area-inset-top); } }
 .stat { display: flex; align-items: baseline; gap: 10px; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
 .stat .label { font-size: 13px; opacity: .8; letter-spacing: 2px; }
 .stat span:last-child { font-family: Orbitron, monospace; font-size: 26px; font-weight: 900; }
@@ -110,7 +112,7 @@ button.go {
 .card { position: relative; max-height: calc(100vh - 32px); overflow-y: auto; }
 .wallet { position: absolute; top: 16px; right: 20px; font-family: Orbitron, monospace; font-weight: 900; color: #ffd23f; }
 .menubtns { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
-.menubtns button, .btns button, .cupcard button, .uprow button, #muteBtn {
+.menubtns button, .btns button, .cupcard button, .uprow button, #muteBtn, #appBox button {
   font: inherit; color: #fff; background: rgba(255,255,255,.08); border: 2px solid transparent;
   border-radius: 10px; padding: 10px 16px; cursor: pointer;
 }
@@ -380,9 +382,13 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
 #tstick, .tfoot { display: none; }
 #tzone { left: 0; bottom: 0; width: 46vw; height: 68vh; }
 #twheel, #tstick { pointer-events: none; }
-#pauseBtn { display: none; position: absolute; top: 10px; left: 50%; margin-left: -22px; width: 44px; height: 44px; padding: 0; border-radius: 50%;
-  pointer-events: auto; align-items: center; justify-content: center; background: rgba(12,18,38,.55); border: 1.5px solid rgba(255,255,255,.35); touch-action: manipulation; }
-#pauseBtn svg, #pauseBtn .ic { width: 22px; height: 22px; }
+#pauseBtn { display: none; position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 50%; margin-left: -34px; width: 68px; height: 40px; padding: 0;
+  border-radius: 6px; transform: skewX(-14deg); pointer-events: auto; align-items: center; justify-content: center; touch-action: manipulation;
+  background: linear-gradient(180deg, rgba(34,44,76,.78), rgba(12,18,38,.85)); border: 1.5px solid rgba(255,255,255,.3); border-top: 3px solid var(--acc);
+  box-shadow: 0 5px 16px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.05); transition: background .1s, transform .1s; }
+#pauseBtn::before { content: ''; position: absolute; inset: -10px -8px; }   /* 放大觸控範圍 */
+#pauseBtn:active { background: linear-gradient(90deg, var(--acc), var(--acc2)); transform: skewX(-14deg) scale(.94); }
+#pauseBtn svg { width: 22px; height: 22px; fill: #fff; transform: skewX(14deg); filter: drop-shadow(0 1px 3px rgba(0,0,0,.6)); pointer-events: none; }
 body.touch #pauseBtn { display: flex; }
 body.touch #trackname { top: 62px; }
 body.touch #owhud { top: 60px; }
@@ -664,3 +670,30 @@ input[type=range]:focus { outline: none; }
 /* ---------- App 更新提示 ---------- */
 #updbar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 50; padding: 10px 18px; font-size: 15px; font-weight: 700;
   color: #fff; background: linear-gradient(90deg, #ff5a1f, #ff1f6b); border: 0; border-radius: 22px; box-shadow: 0 6px 20px rgba(0,0,0,.5); touch-action: manipulation; }
+
+/* ---------- 設定頁：App 模式 ---------- */
+#appBox { text-align: left; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); border-left: 4px solid var(--acc); border-radius: 10px; padding: 10px 14px; margin: 0 0 12px; }
+#appBox .apptitle { display: flex; align-items: center; gap: 8px; font-size: 16px; }
+#appBox .apptitle .ic { width: 20px; height: 20px; color: var(--acc); }
+#appBadge { margin-left: auto; font-size: 12px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,.12); }
+#appBadge.ok { background: rgba(77,255,136,.2); color: #7dff9a; }
+#appText { margin: 6px 0 8px; font-size: 14px; line-height: 1.5; opacity: .85; }
+#appBox .appbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+#appBox .appbtns:empty, #appBox .appbtns:not(:has(button:not(.hidden))) { display: none; }
+
+/* ---------- 橫向手機（高度很矮）：主選單改兩欄，設定 / 排行榜才不會被切到畫面外 ---------- */
+@media (orientation: landscape) and (max-height: 520px) {
+  .screen.mainmenu { align-items: stretch; background: linear-gradient(90deg, rgba(6,8,14,.92) 0%, rgba(6,8,14,.78) 55%, rgba(6,8,14,0) 82%); }
+  .mm-left { width: min(660px, 80vw); gap: 8px; padding: 10px 0 10px max(18px, env(safe-area-inset-left)); justify-content: center; }
+  .mm-logo { position: static; display: flex; align-items: baseline; gap: 10px; }
+  .mm-l1, .mm-l2 { font-size: 28px; }
+  .mm-speed { display: none; }
+  .mm-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; }
+  .plate { padding: 7px 18px 7px 14px; gap: 10px; }
+  .plate .pn, .plate .pt small { display: none; }
+  .plate .pt b { font-size: 16px; }
+  .plate > .ic { width: 22px; height: 22px; }
+  .mm-foot { gap: 6px; }
+  .mm-car { top: auto; bottom: 10px; right: 16px; }
+  .mm-car b { font-size: 20px; }
+}

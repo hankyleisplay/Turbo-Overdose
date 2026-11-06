@@ -1132,6 +1132,39 @@ function showResults() {
   $('touch').classList.add('hidden');
 }
 
+// ================= 沉浸式：全螢幕、螢幕常亮、返回鍵 =================
+// 目標：手機上玩的時候不被網址列、系統返回手勢、螢幕自動變暗打擾。
+// 已安裝成 App 時由 manifest 負責全螢幕 + 橫向；在瀏覽器分頁裡則用 Fullscreen API（需要手指點擊才能觸發）。
+const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true;
+async function goImmersive() {
+  if (!isTouch) return;
+  keepAwake();
+  if (standalone || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+  try { await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch { return; }
+  try { await screen.orientation.lock('landscape'); } catch { /* 不支援鎖定方向就算了 */ }
+}
+let wakeLock = null;
+async function keepAwake() {
+  try {
+    if (!navigator.wakeLock || wakeLock) return;
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch { /* 沒有權限或不支援 */ }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && started && isTouch) keepAwake(); });
+window.goImmersive = goImmersive;   // 設定頁的「進入全螢幕」按鈕用
+// 系統返回鍵 / 返回手勢：不要直接離開 App——比賽中改成暫停，選單裡改成「返回」
+if (isTouch) {
+  history.replaceState({ td: 0 }, '');
+  history.pushState({ td: 1 }, '');
+  addEventListener('popstate', () => {
+    history.pushState({ td: 1 }, '');
+    if ((state === 'race' || state === 'countdown') && !paused) { togglePause(); return; }
+    if (paused) return;
+    document.querySelector('.screen:not(.hidden) [data-back]')?.click();
+  });
+}
+
 // ================= 包裝：開始畫面、轉場、開場 =================
 let started = false;
 function beginGame() {
@@ -1141,6 +1174,7 @@ function beginGame() {
   music.play('menu');
   $('loading').classList.add('gone');
   setTimeout(() => $('loading').remove(), 800);
+  goImmersive();
 }
 addEventListener('pointerdown', () => {
   if (!started) beginGame();
@@ -2386,7 +2420,7 @@ $('resetBtn').onclick = async () => {
 };
 
 // ---- 暫停選單 ----
-$('resumeBtn').onclick = () => togglePause();
+$('resumeBtn').onclick = () => { togglePause(); goImmersive(); };
 $('photoBtn').onclick = () => enterPhoto();
 $('photoExit').onclick = () => exitPhoto();
 $('photoSave').onclick = () => savePhoto();

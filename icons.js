@@ -19,6 +19,7 @@ const P = {
   warn: '<path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17h.01"/>',
   fuel: '<path d="M5 21V4h9v17M5 11h9"/><path d="M14 8l4 3v7a2 2 0 0 0 4 0v-6l-3-3"/>',
   wrench: '<path d="M14.5 5.5a4 4 0 0 0 5 5L11 19a2.1 2.1 0 0 1-3-3l8.5-8.5"/>',
+  download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   play: '<path d="M7 5l12 7-12 7z"/>',
   medal: '<circle cx="12" cy="15" r="5"/><path d="M8.5 11L6 3h4l2 5 2-5h4l-2.5 8"/>',
