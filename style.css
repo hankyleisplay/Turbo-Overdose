@@ -376,7 +376,19 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
 #tdoor { display: none; right: 22px; bottom: 262px; }
 #touch.free #tdoor { display: block; }
 #touch.onfoot #tshift { display: none; }
-#touch.onfoot .tright [data-k="hand"] svg { opacity: .55; }
+/* 下車步行：隱藏方向盤與踏板，改用搖桿 + 奔跑 / 跳躍 */
+#tstick, .tfoot { display: none; }
+#tstick { left: 22px; bottom: 22px; width: 140px; height: 140px; opacity: .9; }
+#tstick.active { opacity: 1; }
+#tstickKnob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #e9edf2, #5d6570); border: 1.5px solid rgba(255,255,255,.55); box-shadow: 0 4px 10px rgba(0,0,0,.5); pointer-events: none; }
+.tfoot { bottom: 30px; width: 78px; height: 78px; }
+#tjump { right: 24px; }
+#trun { right: 116px; bottom: 56px; }
+#touch.onfoot #tstick { display: block; }
+#touch.onfoot .tfoot { display: block; }
+#touch.onfoot #twheel, #touch.onfoot .tright { display: none; }
+@media (max-width: 700px) { #tstick { width: 116px; height: 116px; left: 14px; bottom: 16px; } .tfoot { width: 64px; height: 64px; bottom: 22px; } #tjump { right: 16px; } #trun { right: 94px; bottom: 44px; } }
 @media (max-width: 700px) { #tdoor { right: 14px; bottom: 214px; width: 56px; height: 56px; } #owhud { top: 56px; } #owstars { font-size: 20px; } }
 @media (max-height: 450px) and (min-width: 701px) { #tdoor { bottom: 196px; width: 54px; height: 54px; } }
 

@@ -145,6 +145,21 @@
     </svg>
   </div>
 
+  <!-- 下車步行：虛擬搖桿、奔跑、跳躍（只在步行時顯示） -->
+  <div id="tstick" class="tctl" aria-label="搖桿">
+    <svg viewBox="0 0 120 120">
+      <circle cx="60" cy="60" r="56" fill="rgba(12,18,38,.45)" stroke="rgba(255,255,255,.3)" stroke-width="2"/>
+      <path d="M60 14 L68 26 H52 Z M60 106 L68 94 H52 Z M14 60 L26 52 V68 Z M106 60 L94 52 V68 Z" fill="rgba(255,255,255,.35)"/>
+    </svg>
+    <div id="tstickKnob"></div>
+  </div>
+  <div class="tctl ticon tfoot" id="trun" data-k="nitro" aria-label="奔跑">
+    <svg viewBox="0 0 64 64"><path d="M14 40 L24 22 L34 30 L50 18 M34 30 L38 46 L30 54 M24 22 L16 34" stroke="#2bd0ff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="12" r="5" fill="#2bd0ff"/></svg>
+  </div>
+  <div class="tctl ticon tfoot" id="tjump" data-k="hand" aria-label="跳躍">
+    <svg viewBox="0 0 64 64"><path d="M32 48 V16 M20 28 L32 16 L44 28" stroke="#ffd23f" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 54 H46" stroke="rgba(255,255,255,.5)" stroke-width="4" stroke-linecap="round"/></svg>
+  </div>
+
   <div class="tright">
     <!-- 手煞車拉桿 -->
     <div class="tctl ticon" data-k="hand" aria-label="手煞車甩尾">

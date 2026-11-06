@@ -131,6 +131,7 @@ export function createOpenWorld(G) {
     sirenOff();
     ow.onFoot = false; ow.wanted = 0;
     G.$('owhud').classList.add('hidden');
+    G.$('touch').classList.remove('onfoot');
   }
 
   // ---- 行人 ----

@@ -265,16 +265,18 @@ document.querySelectorAll('#touch [data-k]').forEach(b => {
   b.addEventListener('pointercancel', off);
   b.addEventListener('contextmenu', e => e.preventDefault());
 });
-let touchSteer = 0;
+let touchSteer = 0, touchSteerRaw = 0, touchMove = 0, touchSteerT = 0;
 {
   const wheel = $('twheel'), svg = $('twheelSvg');
   let id = null;
   const set = e => {
     const r = wheel.getBoundingClientRect();
     if (!r.width) return;
-    const x = clamp((e.clientX - (r.left + r.width / 2)) / (r.width * 0.45), -1, 1);
-    touchSteer = Math.sign(x) * Math.max(0, Math.abs(x) - 0.06) / 0.94;   // 中間留一點死區
-    svg.style.transform = `rotate(${touchSteer * 110}deg)`;
+    // 手指要拖到約 1 倍輪寬才打滿；小幅度時用冪次曲線放緩，微調更好控制
+    const x = clamp((e.clientX - (r.left + r.width / 2)) / (r.width * 1.0), -1, 1);
+    const lin = Math.sign(x) * Math.max(0, Math.abs(x) - 0.08) / 0.92;   // 中間留一點死區
+    touchSteerRaw = Math.sign(lin) * Math.abs(lin) ** 1.6;
+    svg.style.transform = `rotate(${touchSteerRaw * 110}deg)`;
   };
   wheel.addEventListener('pointerdown', e => {
     e.preventDefault();
@@ -286,12 +288,43 @@ let touchSteer = 0;
   wheel.addEventListener('pointermove', e => { if (e.pointerId === id) set(e); });
   const end = e => {
     if (e.pointerId !== id) return;
-    id = null; touchSteer = 0;
+    id = null; touchSteerRaw = 0;
     svg.style.transform = '';
     wheel.classList.remove('active');
   };
   wheel.addEventListener('pointerup', end);
   wheel.addEventListener('pointercancel', end);
+}
+// 下車後改用虛擬搖桿走路：上下 = 前進 / 後退，左右 = 轉向
+{
+  const stick = $('tstick'), knob = $('tstickKnob');
+  let id = null;
+  const set = e => {
+    const r = stick.getBoundingClientRect();
+    if (!r.width) return;
+    const R = r.width * 0.5;
+    let dx = (e.clientX - (r.left + R)) / R, dy = (e.clientY - (r.top + R)) / R;
+    const len = Math.hypot(dx, dy);
+    if (len > 1) { dx /= len; dy /= len; }
+    knob.style.transform = `translate(${dx * R * 0.55}px, ${dy * R * 0.55}px)`;
+    const dz = v => Math.sign(v) * Math.max(0, Math.abs(v) - 0.15) / 0.85;
+    touchSteerRaw = dz(dx);
+    touchMove = -dz(dy);
+  };
+  stick.addEventListener('pointerdown', e => {
+    e.preventDefault(); id = e.pointerId;
+    try { stick.setPointerCapture(id); } catch { /* 同上 */ }
+    stick.classList.add('active'); set(e);
+  });
+  stick.addEventListener('pointermove', e => { if (e.pointerId === id) set(e); });
+  const end = e => {
+    if (e.pointerId !== id) return;
+    id = null; touchSteerRaw = 0; touchMove = 0;
+    knob.style.transform = '';
+    stick.classList.remove('active');
+  };
+  stick.addEventListener('pointerup', end);
+  stick.addEventListener('pointercancel', end);
 }
 
 const pad = { throttle: 0, brake: 0, steer: 0, hand: false, nitro: false, gp: null };
@@ -326,9 +359,14 @@ function rumble(strong, weak, ms) {
   if (a?.playEffect) a.playEffect('dual-rumble', { startDelay: 0, duration: ms, strongMagnitude: clamp(strong, 0, 1), weakMagnitude: clamp(weak, 0, 1) }).catch(() => {});
 }
 function readControls() {
+  // 觸控轉向做一點低通平滑，避免手指抖動直接變成方向盤抖動
+  const now = performance.now(), dt = Math.min(0.1, (now - touchSteerT) / 1000);
+  touchSteerT = now;
+  touchSteer += (touchSteerRaw - touchSteer) * Math.min(1, 14 * dt);
+  if (Math.abs(touchSteer - touchSteerRaw) < 0.002) touchSteer = touchSteerRaw;
   return {
-    throttle: Math.max(keys.up ? 1 : 0, pad.throttle),
-    brake: Math.max(keys.down ? 1 : 0, pad.brake),
+    throttle: Math.max(keys.up ? 1 : 0, pad.throttle, touchMove > 0 ? touchMove : 0),
+    brake: Math.max(keys.down ? 1 : 0, pad.brake, touchMove < 0 ? -touchMove : 0),
     steer: clamp((keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (pad.steer || 0) + (touchSteer || 0), -1, 1),
     hand: keys.hand || pad.hand,
     nitro: keys.nitro || pad.nitro,
@@ -1838,7 +1876,7 @@ const PAD_NAME = { 'W': 'RT', 'S': 'LT', 'A D': '左搖桿', 'Space': 'B', 'Shif
 function hintItems() {
   const free = session.mode === 'free', foot = free && ow.onFoot, manual = !!settings.manual && !foot;
   if (lastInput === 'touch') {
-    if (foot) return [['方向盤', '轉向'], ['油門 / 煞車', '前進 / 後退'], ['氮氣瓶', '跑步'], ['拉桿', '跳'], ['車門鈕', '上車']];
+    if (foot) return [['搖桿', '移動 / 轉向'], ['奔跑鈕', '跑步'], ['跳躍鈕', '跳'], ['車門鈕', '上車']];
     const t = [['方向盤', '左右拖曳轉向'], ['踏板', '油門 / 煞車'], ['拉桿', '甩尾'], ['氮氣瓶', '加速']];
     if (manual) t.push(['撥片', '換檔']);
     if (free) t.push(['車門鈕', '下車']);
