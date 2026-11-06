@@ -263,68 +263,64 @@ document.querySelectorAll('#touch [data-k]').forEach(b => {
   b.addEventListener('pointerdown', on);
   b.addEventListener('pointerup', off);
   b.addEventListener('pointercancel', off);
+  b.addEventListener('lostpointercapture', off);   // 被系統手勢搶走手指時一定要放開，否則油門會卡住
   b.addEventListener('contextmenu', e => e.preventDefault());
 });
+const releaseTouchKeys = () => document.querySelectorAll('#touch [data-k]').forEach(b => { keys[b.dataset.k] = false; b.classList.remove('active'); });
+addEventListener('blur', releaseTouchKeys);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  releaseTouchKeys();
+  if ((state === 'race' || state === 'countdown') && !paused) togglePause();   // 切到別的 App / 來電時自動暫停
+});
 let touchSteer = 0, touchSteerRaw = 0, touchMove = 0, touchSteerT = 0;
+// 左半邊整塊都是「轉向區」：不必精準按在方向盤上，手指落在哪就從哪開始算（相對位移），
+// 滑出方向盤範圍也不會放開。下車步行時同一塊區域改當搖桿用。
 {
-  const wheel = $('twheel'), svg = $('twheelSvg');
-  let id = null;
-  const set = e => {
-    const r = wheel.getBoundingClientRect();
-    if (!r.width) return;
-    // 手指要拖到約 1 倍輪寬才打滿；小幅度時用冪次曲線放緩，微調更好控制
-    const x = clamp((e.clientX - (r.left + r.width / 2)) / (r.width * 1.0), -1, 1);
-    const lin = Math.sign(x) * Math.max(0, Math.abs(x) - 0.08) / 0.92;   // 中間留一點死區
-    touchSteerRaw = Math.sign(lin) * Math.abs(lin) ** 1.6;
-    svg.style.transform = `rotate(${touchSteerRaw * 110}deg)`;
+  const zone = $('tzone'), wheel = $('twheel'), svg = $('twheelSvg'), stick = $('tstick'), knob = $('tstickKnob'), touchEl = $('touch');
+  let id = null, ox = 0, oy = 0, foot = false;
+  const reset = () => {
+    id = null; touchSteerRaw = 0; touchMove = 0;
+    svg.style.transform = ''; knob.style.transform = '';
+    wheel.classList.remove('active'); stick.classList.remove('active');
   };
-  wheel.addEventListener('pointerdown', e => {
+  const set = e => {
+    if (foot) {
+      const r = stick.getBoundingClientRect();
+      const R = Math.max(1, r.width * 0.5);
+      let dx = (e.clientX - ox) / R, dy = (e.clientY - oy) / R;
+      const len = Math.hypot(dx, dy);
+      if (len > 1) { dx /= len; dy /= len; }
+      knob.style.transform = `translate(${dx * R * 0.55}px, ${dy * R * 0.55}px)`;
+      const dz = v => Math.sign(v) * Math.max(0, Math.abs(v) - 0.15) / 0.85;
+      touchSteerRaw = dz(dx); touchMove = -dz(dy);
+    } else {
+      const w = Math.max(60, wheel.getBoundingClientRect().width);
+      // 往左 / 右拖約 0.9 倍輪寬才打滿；小幅度用冪次曲線放緩
+      const x = clamp((e.clientX - ox) / (w * 0.9), -1, 1);
+      const lin = Math.sign(x) * Math.max(0, Math.abs(x) - 0.06) / 0.94;
+      touchSteerRaw = Math.sign(lin) * Math.abs(lin) ** 1.5;
+      svg.style.transform = `rotate(${touchSteerRaw * 110}deg)`;
+    }
+  };
+  zone.addEventListener('pointerdown', e => {
     e.preventDefault();
+    if (id !== null) return;
+    foot = touchEl.classList.contains('onfoot');
     id = e.pointerId;
-    try { wheel.setPointerCapture(id); } catch { /* 同上 */ }
-    wheel.classList.add('active');
+    try { zone.setPointerCapture(id); } catch { /* 有些瀏覽器在手指已離開時會丟錯 */ }
+    if (foot) { const r = stick.getBoundingClientRect(); ox = r.left + r.width / 2; oy = r.top + r.height / 2; stick.classList.add('active'); }
+    else { ox = e.clientX; oy = e.clientY; wheel.classList.add('active'); }
     set(e);
   });
-  wheel.addEventListener('pointermove', e => { if (e.pointerId === id) set(e); });
-  const end = e => {
-    if (e.pointerId !== id) return;
-    id = null; touchSteerRaw = 0;
-    svg.style.transform = '';
-    wheel.classList.remove('active');
-  };
-  wheel.addEventListener('pointerup', end);
-  wheel.addEventListener('pointercancel', end);
-}
-// 下車後改用虛擬搖桿走路：上下 = 前進 / 後退，左右 = 轉向
-{
-  const stick = $('tstick'), knob = $('tstickKnob');
-  let id = null;
-  const set = e => {
-    const r = stick.getBoundingClientRect();
-    if (!r.width) return;
-    const R = r.width * 0.5;
-    let dx = (e.clientX - (r.left + R)) / R, dy = (e.clientY - (r.top + R)) / R;
-    const len = Math.hypot(dx, dy);
-    if (len > 1) { dx /= len; dy /= len; }
-    knob.style.transform = `translate(${dx * R * 0.55}px, ${dy * R * 0.55}px)`;
-    const dz = v => Math.sign(v) * Math.max(0, Math.abs(v) - 0.15) / 0.85;
-    touchSteerRaw = dz(dx);
-    touchMove = -dz(dy);
-  };
-  stick.addEventListener('pointerdown', e => {
-    e.preventDefault(); id = e.pointerId;
-    try { stick.setPointerCapture(id); } catch { /* 同上 */ }
-    stick.classList.add('active'); set(e);
-  });
-  stick.addEventListener('pointermove', e => { if (e.pointerId === id) set(e); });
-  const end = e => {
-    if (e.pointerId !== id) return;
-    id = null; touchSteerRaw = 0; touchMove = 0;
-    knob.style.transform = '';
-    stick.classList.remove('active');
-  };
-  stick.addEventListener('pointerup', end);
-  stick.addEventListener('pointercancel', end);
+  zone.addEventListener('pointermove', e => { if (e.pointerId === id) set(e); });
+  const end = e => { if (e.pointerId === id) reset(); };
+  zone.addEventListener('pointerup', end);
+  zone.addEventListener('pointercancel', end);
+  zone.addEventListener('lostpointercapture', end);   // 手指被系統手勢 / 切換 App 搶走時一定要放開，否則會一直打方向
+  zone.addEventListener('contextmenu', e => e.preventDefault());
+  addEventListener('blur', reset);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) reset(); });
 }
 
 const pad = { throttle: 0, brake: 0, steer: 0, hand: false, nitro: false, gp: null };
@@ -623,6 +619,7 @@ function beginRace(sess = session) {
 function togglePause() {
   if (state !== 'race' && state !== 'countdown') return;
   paused = !paused;
+  if (paused) { releaseTouchKeys(); for (const k in keys) keys[k] = false; }
   $('restartBtn').classList.toggle('hidden', session.mode === 'online');
   $('pausemenu').classList.toggle('hidden', !paused);
   if (audio) paused ? audio.ctx.suspend() : audio.ctx.resume();
@@ -2396,10 +2393,16 @@ $('photoSave').onclick = () => savePhoto();
 $('photoFov').oninput = e => { if (photo) photo.fov = +e.target.value; };
 choose('#filters button', 'f', f => applyFilter(f));
 $('rpExit').onclick = () => exitReplay();
-for (const [id, key] of [['musicVol', 'music'], ['sfxVol', 'sfx']]) {
-  $(id).value = Math.round(settings[key] * 100);
-  $(id).oninput = e => { settings[key] = e.target.value / 100; applyVolumes(); saveSettings(); };
+for (const [ids, key] of [[['musicVol', 'pMusicVol'], 'music'], [['sfxVol', 'pSfxVol'], 'sfx']]) {
+  for (const id of ids) {
+    $(id).value = Math.round(settings[key] * 100);
+    $(id).oninput = e => {
+      settings[key] = e.target.value / 100; applyVolumes(); saveSettings();
+      for (const o of ids) if (o !== id) { $(o).value = e.target.value; paintRange($(o)); }
+    };
+  }
 }
+$('pauseBtn').onclick = () => togglePause();
 $('restartBtn').onclick = () => { if (session.mode === 'online') return; togglePause(); startRace(session); };
 $('quitBtn').onclick = () => {
   togglePause();

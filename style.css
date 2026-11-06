@@ -378,6 +378,18 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
 #touch.onfoot #tshift { display: none; }
 /* 下車步行：隱藏方向盤與踏板，改用搖桿 + 奔跑 / 跳躍 */
 #tstick, .tfoot { display: none; }
+#tzone { left: 0; bottom: 0; width: 46vw; height: 68vh; }
+#twheel, #tstick { pointer-events: none; }
+#pauseBtn { display: none; position: absolute; top: 10px; left: 50%; margin-left: -22px; width: 44px; height: 44px; padding: 0; border-radius: 50%;
+  pointer-events: auto; align-items: center; justify-content: center; background: rgba(12,18,38,.55); border: 1.5px solid rgba(255,255,255,.35); touch-action: manipulation; }
+#pauseBtn svg, #pauseBtn .ic { width: 22px; height: 22px; }
+body.touch #pauseBtn { display: flex; }
+body.touch #trackname { top: 62px; }
+body.touch #owhud { top: 60px; }
+#pausemenu .row { display: flex; align-items: center; gap: 12px; margin: 4px 0; text-align: left; }
+#pausemenu .rlabel { min-width: 44px; }
+#pausemenu input[type=range] { flex: 1; }
+.card { max-height: calc(100dvh - 32px); }
 #tstick { left: 22px; bottom: 22px; width: 140px; height: 140px; opacity: .9; }
 #tstick.active { opacity: 1; }
 #tstickKnob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%;
@@ -638,3 +650,13 @@ input[type=range]:focus { outline: none; }
 @keyframes driftPulse { to { transform: scale(1.06); } }
 @keyframes driftBank { 0% { transform: translateX(-50%) skewX(-12deg) scale(1.25); } 20% { transform: translateX(-50%) skewX(-12deg) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) skewX(-12deg) translateY(-30px); } }
 @media (max-width: 700px) { #drift { top: 46%; } #drift b { font-size: 26px; } }
+
+/* 橫向手機：暫停選單壓成兩欄，「回主選單」才不會被擠出畫面 */
+@media (max-height: 520px) {
+  #pausemenu .card { padding: 12px 20px; }
+  #pausemenu h2 { font-size: 22px; margin: 0 0 6px; }
+  #pausemenu .menubtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #pausemenu .menubtns > .go, #pausemenu .menubtns > .row { grid-column: 1 / -1; }
+  #pausemenu .menubtns button { padding: 9px 10px; font-size: 16px; margin: 0; }
+  #pausemenu .row { margin: 0; }
+}
