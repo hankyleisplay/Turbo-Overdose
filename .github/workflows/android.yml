@@ -59,6 +59,10 @@ jobs:
         run: |
           KS="$RUNNER_TEMP/release.keystore"
           if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] && [ -n "$KS_ALIAS" ]; then
+            # 診斷（只印長度與非法字元數，不印內容）。正確的長度應為 5704
+            CLEAN="$(printf '%s' "$KS_B64" | tr -d ' \n\r\t"')"
+            echo "ANDROID_KEYSTORE_BASE64 長度=${#CLEAN}（正確應為 5704），非 base64 字元數=$(printf '%s' "$CLEAN" | tr -d 'A-Za-z0-9+/=' | wc -c)"
+            echo "ANDROID_KEYSTORE_PASSWORD 長度=${#KS_PASS}（正確應為 40），ALIAS 長度=${#KS_ALIAS}（正確應為 5）"
             # 容忍貼上時混進的空白 / 換行 / 引號
             printf '%s' "$KS_B64" | tr -d ' \n\r\t"' | base64 -d > "$KS" \
               || { echo "::error::ANDROID_KEYSTORE_BASE64 不是有效的 base64（可能貼到一半被截斷）。請重新複製整個檔案內容"; exit 1; }
