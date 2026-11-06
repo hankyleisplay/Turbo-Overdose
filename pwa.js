@@ -4,7 +4,8 @@
 // - 設定頁與主選單都有「安裝 App」入口；支援的瀏覽器一鍵安裝，其餘顯示手動步驟
 const $ = id => document.getElementById(id);
 
-const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true;
+const isApp = !!window.Capacitor || /; wv\)/.test(navigator.userAgent);   // Android App 外殼
+const standalone = isApp || matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isTouch = matchMedia('(pointer: coarse)').matches;
 let deferred = null;
@@ -19,7 +20,9 @@ function renderApp() {
   $('btnInstall')?.classList.toggle('hidden', standalone || !isTouch);
   if (standalone) {
     badge.textContent = '使用中'; badge.className = 'ok';
-    text.textContent = '你正在以 App 模式遊玩：全螢幕、橫向、沒有網址列，系統返回鍵會變成暫停。有新版本時畫面下方會出現更新提示。';
+    text.textContent = isApp
+      ? '你正在使用 Android App：全螢幕、橫向、螢幕不會自動變暗，返回鍵會變成暫停。遊戲內容會自動更新到最新版，不需要重新安裝。'
+      : '你正在以 App 模式遊玩：全螢幕、橫向、沒有網址列，系統返回鍵會變成暫停。有新版本時畫面下方會出現更新提示。';
   } else if (deferred) {
     badge.textContent = '可安裝'; badge.className = '';
     text.textContent = '安裝後會在桌面出現圖示，開啟就是全螢幕橫向、沒有網址列，單機模式可離線玩，並且自動更新。';

@@ -1,0 +1,11 @@
+{
+  "name": "turbo-overdose-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Turbo Overdose Android App（Capacitor 外殼，內容載入 GitHub Pages）",
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/core": "^8.6.0"
+  }
+}

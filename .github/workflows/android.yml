@@ -1,0 +1,87 @@
+name: Build Android APK
+
+# 只有「原生外殼」(native/) 改動時才需要重新打包。
+# 遊戲內容本身（根目錄的 html / js / css）是 App 開啟時從 GitHub Pages 載入的，推上 main 後 App 自動就是最新版。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'native/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Capacitor
+        working-directory: native
+        run: npm ci
+
+      - name: Sync web assets
+        working-directory: native
+        run: npx cap sync android
+
+      # 簽章金鑰：有設定 repo secrets（ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS）就用固定金鑰，
+      # 這樣新版 APK 可以直接覆蓋安裝；沒設定就每次臨時產生一把（可安裝，但換版要先解除安裝舊版）。
+      - name: Prepare signing key
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          KS="$RUNNER_TEMP/release.keystore"
+          if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] && [ -n "$KS_ALIAS" ]; then
+            echo "$KS_B64" | base64 -d > "$KS"
+            ALIAS="$KS_ALIAS"; PASS="$KS_PASS"
+            echo "使用 repo secrets 的固定簽章金鑰"
+          else
+            ALIAS=turbo; PASS="$(openssl rand -hex 16)"
+            keytool -genkeypair -keystore "$KS" -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PASS" -keypass "$PASS" -dname "CN=Turbo Overdose"
+            echo "::warning::沒有設定簽章 secrets，這次的 APK 使用臨時金鑰（換版安裝前需先解除安裝舊版）"
+          fi
+          echo "::add-mask::$PASS"
+          { echo "KEYSTORE_FILE=$KS"; echo "KEYSTORE_PASSWORD=$PASS"; echo "KEY_ALIAS=$ALIAS"; echo "KEY_PASSWORD=$PASS"; } >> "$GITHUB_ENV"
+
+      - name: Build release APK
+        working-directory: native/android
+        run: ./gradlew assembleRelease -PappVersionCode=${{ github.run_number }} -PappVersionName=1.0.${{ github.run_number }}
+
+      - name: Publish to release "apk-latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp native/android/app/build/outputs/apk/release/app-release.apk TurboOverdose.apk
+          gh release delete apk-latest --yes --cleanup-tag || true
+          gh release create apk-latest TurboOverdose.apk \
+            --title "Turbo Overdose Android App" \
+            --notes "最新版 Android APK（第 ${{ github.run_number }} 次建置）。下載後安裝即可；遊戲內容會自動更新，之後不需要重新安裝。" \
+            --target "${{ github.sha }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TurboOverdose-apk
+          path: TurboOverdose.apk

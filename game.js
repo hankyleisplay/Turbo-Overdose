@@ -1135,7 +1135,9 @@ function showResults() {
 // ================= 沉浸式：全螢幕、螢幕常亮、返回鍵 =================
 // 目標：手機上玩的時候不被網址列、系統返回手勢、螢幕自動變暗打擾。
 // 已安裝成 App 時由 manifest 負責全螢幕 + 橫向；在瀏覽器分頁裡則用 Fullscreen API（需要手指點擊才能觸發）。
-const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true;
+// 已安裝成 PWA，或在 Android App（Capacitor WebView）裡：系統已經負責全螢幕與橫向
+const isApp = !!window.Capacitor || /; wv\)/.test(navigator.userAgent);
+const standalone = isApp || matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true;
 async function goImmersive() {
   if (!isTouch) return;
   keepAwake();

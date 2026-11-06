@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Turbo Overdose</string>
+    <string name="title_activity_main">Turbo Overdose</string>
+    <string name="package_name">com.hankyle.turbooverdose</string>
+    <string name="custom_url_scheme">com.hankyle.turbooverdose</string>
+</resources>

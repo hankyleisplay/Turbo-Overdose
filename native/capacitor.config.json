@@ -1,0 +1,15 @@
+{
+  "appId": "com.hankyle.turbooverdose",
+  "appName": "Turbo Overdose",
+  "webDir": "www",
+  "backgroundColor": "#0b0f1c",
+  "server": {
+    "url": "https://hankyleisplay.github.io/Turbo-Overdose/",
+    "androidScheme": "https",
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#0b0f1c"
+  }
+}
