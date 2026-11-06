@@ -59,8 +59,12 @@ jobs:
         run: |
           KS="$RUNNER_TEMP/release.keystore"
           if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] && [ -n "$KS_ALIAS" ]; then
-            echo "$KS_B64" | base64 -d > "$KS"
-            ALIAS="$KS_ALIAS"; PASS="$KS_PASS"
+            # 容忍貼上時混進的空白 / 換行 / 引號
+            printf '%s' "$KS_B64" | tr -d ' \n\r\t"' | base64 -d > "$KS" \
+              || { echo "::error::ANDROID_KEYSTORE_BASE64 不是有效的 base64（可能貼到一半被截斷）。請重新複製整個檔案內容"; exit 1; }
+            ALIAS="$(printf '%s' "$KS_ALIAS" | tr -d ' \n\r\t')"; PASS="$(printf '%s' "$KS_PASS" | tr -d ' \n\r\t')"
+            keytool -list -keystore "$KS" -storepass "$PASS" -alias "$ALIAS" > /dev/null \
+              || { echo "::error::金鑰檔打不開：請確認 PASSWORD 與 ALIAS（應為 turbo）兩個 secret 是否正確"; exit 1; }
             echo "使用 repo secrets 的固定簽章金鑰"
           else
             ALIAS=turbo; PASS="$(openssl rand -hex 16)"
