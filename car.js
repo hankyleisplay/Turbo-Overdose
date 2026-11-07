@@ -218,6 +218,7 @@ export function makeCar(color, styleName = 'gt') {
   }
 
   mergeByMaterial(chassis);
+  const headMesh = chassis.children.find(c => c.material === MAT.head) || null;
 
   const flames = [-0.45, 0.45].map(x => {
     const f = new THREE.Mesh(GEO.flame, MAT.flame);
@@ -236,13 +237,26 @@ export function makeCar(color, styleName = 'gt') {
   beam.renderOrder = 2;
   root.add(beam);
 
-  return { root, chassis, wheels, pivots, flames, tail, paint, beam, style: styleName };
+  return { root, chassis, wheels, pivots, flames, tail, paint, beam, headMesh, lightMode: null, style: styleName };
 }
 
 // 夜晚程度 0~1：車燈變亮、路面上的光變明顯
 export function setHeadlights(n) {
   MAT.beam.opacity = n * 0.55;
   MAT.head.emissiveIntensity = 1.1 + n * 2.5;
+}
+
+// 玩家手動開 / 關車燈（仿 CPM 車燈鈕）：mode = null 跟著日夜自動、true 開、false 關
+const LIGHT_ON = {
+  head: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff4dd, emissiveIntensity: 4 }),
+  beam: new THREE.MeshBasicMaterial({ map: beamTex, transparent: true, opacity: 0.42, depthWrite: false, blending: THREE.AdditiveBlending }),
+};
+const LIGHT_OFF = { head: new THREE.MeshStandardMaterial({ color: 0xd8dde4, emissive: 0x000000, emissiveIntensity: 0 }) };
+export function setCarLights(model, mode) {
+  if (!model || model.lightMode === mode) return;
+  model.lightMode = mode;
+  if (model.headMesh) model.headMesh.material = mode === true ? LIGHT_ON.head : mode === false ? LIGHT_OFF.head : MAT.head;
+  model.beam.material = mode === true ? LIGHT_ON.beam : MAT.beam;
 }
 
 // 計時賽的幽靈車：半透明、不投影

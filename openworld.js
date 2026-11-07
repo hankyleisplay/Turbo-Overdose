@@ -272,6 +272,15 @@ export function createOpenWorld(G) {
     cops.forEach(c => consider(c, 'cop'));
     return best;
   }
+  // 按喇叭：附近走路的行人會被嚇到跑開
+  ow.honk = () => {
+    if (!ow.active || ow.onFoot) return;
+    for (const p of peds) {
+      if (p.state !== 'walk') continue;
+      const dx = p.pos.x - player.pos.x, dz = p.pos.z - player.pos.z, d = Math.hypot(dx, dz);
+      if (d < 18 && d > 0.1) { p.state = 'flee'; p.t = 2; p.flee.set(dx / d, 0, dz / d); }
+    }
+  };
   ow.toggleVehicle = () => {
     if (!ow.active || G.state() !== 'race') return;
     if (!ow.onFoot) {

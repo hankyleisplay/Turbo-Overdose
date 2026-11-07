@@ -126,9 +126,21 @@ export class Vehicle {
       else if (this.gear > 1 && wheelRpm * s.gears[this.gear - 2] / s.gears[this.gear - 1] < 6600 && wheelRpm < 3800) { this.gear--; this.shiftT = 0.1; }
       wheelRpm = Math.abs(u) / s.wheelR * ratio() * 60 / (2 * Math.PI);
     }
-    const reversing = !this.manual && ctl.brake > 0.1 && u < 1.5 && ctl.throttle < 0.1 && Math.abs(this.r) < 0.5;
-    let Fdrive = 0;
-    if (reversing) {
+    // 排檔桿（仿 CPM，觸控自排可選）：ctl.gearSel = 'P' | 'R' | 'N' | 'D'；沒給就是「停下後按住煞車自動倒車」的舊行為
+    const sel = this.manual ? null : (ctl.gearSel || null);
+    this.sel = sel;
+    const reversing = !this.manual && !sel && ctl.brake > 0.1 && u < 1.5 && ctl.throttle < 0.1 && Math.abs(this.r) < 0.5;
+    let Fdrive = 0, brakeIn = ctl.brake;
+    if (sel === 'R') {
+      // R 檔：油門往後開；車子還在往前滑時，油門先當煞車用
+      if (u > 1.5) brakeIn = Math.max(brakeIn, ctl.throttle);
+      else Fdrive = u > -14 ? -7000 * ctl.throttle : 0;
+      this.rpm += (s.idleRpm + 3600 * ctl.throttle - this.rpm) * Math.min(1, 8 * dt);
+    } else if (sel === 'N' || sel === 'P') {
+      // 空檔 / 停車檔：沒有動力，踩油門只會空催；P 檔鎖住
+      this.rpm += (s.idleRpm + 5200 * ctl.throttle - this.rpm) * Math.min(1, 10 * dt);
+      if (sel === 'P') brakeIn = 1;
+    } else if (reversing) {
       Fdrive = u > -14 ? -7000 * ctl.brake : 0;
       this.rpm += (2500 + 2500 * ctl.brake - this.rpm) * Math.min(1, 8 * dt);
     } else {
@@ -148,9 +160,9 @@ export class Vehicle {
 
     // ---- 煞車 ----
     let FxF = 0, FxR = Fdrive;
-    if (ctl.brake > 0 && !reversing && Math.abs(u) > 0.3) {
+    if (brakeIn > 0 && !reversing && Math.abs(u) > 0.3) {
       // ABS：每軸最多用掉 80% 抓地力，保留轉向能力
-      const B = s.brake * ctl.brake;
+      const B = s.brake * brakeIn;
       FxF -= sgn * Math.min(B * 0.7, 0.8 * s.mu * surf.grip * Fzf);
       FxR -= sgn * Math.min(B * 0.3, 0.8 * muR * Fzr);
     }
@@ -195,7 +207,7 @@ export class Vehicle {
     let Tz = s.a * (FyF * cd + FxF * sd) - s.b * FyR;
 
     // 低速時抑制抖動
-    if (Math.abs(u) < 1 && ctl.throttle < 0.05 && !reversing) { Fx -= u * m * 4; }
+    if (Math.abs(u) < 1 && (ctl.throttle < 0.05 || sel === 'N' || sel === 'P') && !reversing && !(sel === 'R' && ctl.throttle >= 0.05)) { Fx -= u * m * (sel === 'P' ? 12 : 4); }
     Tz -= this.r * 900 * (1 + 2 / (1 + Math.abs(u))) * (1 - 0.25 * this.drift);
 
     this.ax += (Fx / m - this.ax) * Math.min(1, 10 * dt);

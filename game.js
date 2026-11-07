@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Vehicle, SPEC, corneringSpeed } from './physics.js';
-import { makeCar, makeGhost, WHEEL_R, setHeadlights } from './car.js';
+import { makeCar, makeGhost, WHEEL_R, setHeadlights, setCarLights } from './car.js';
 import { SkySystem, setupPost, SkidMarks, Sparks, Smoke } from './fx.js';
 import { Music } from './music.js';
 import { connect, onlineAvailable, onlineLocal } from './net.js';
@@ -239,6 +239,8 @@ addEventListener('keydown', e => {
   if (photo) { if (e.code === 'Escape' || e.code === 'KeyP') exitPhoto(); return; }
   if (e.code === 'KeyR' && !(ow.active && ow.onFoot)) resetToTrack(player);
   if (e.code === 'KeyF') ow.toggleVehicle();
+  if (e.code === 'KeyG') horn(true);
+  if (e.code === 'KeyL') toggleLights();
   if (e.code === 'KeyE') shiftGear(1);
   if (e.code === 'KeyQ') shiftGear(-1);
   if (e.code === 'KeyC') camMode = (camMode + 1) % CAM_MODES;
@@ -246,7 +248,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyH') toggleHints();
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
 });
-addEventListener('keyup', e => { if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = false; });
+addEventListener('keyup', e => { if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = false; if (e.code === 'KeyG') horn(false); });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
 if (isTouch) document.body.classList.add('touch');
@@ -409,6 +411,8 @@ function pollPad() {
     else if (scr === 'menu') $('btnQuick').click();
     else if (pressed(9) && !scr) togglePause();
   }
+  if (b(10) > 0.5 && !hornNode) horn(true); else if (!(b(10) > 0.5) && padPrev[10] > 0.5) horn(false);
+  if (pressed(11)) toggleLights();
   if (pressed(3)) { if (ow.active && state === 'race') ow.toggleVehicle(); else camMode = (camMode + 1) % CAM_MODES; }
   if (pressed(8)) resetToTrack(player);
   if (pressed(5)) shiftGear(1);
@@ -419,6 +423,83 @@ function rumble(strong, weak, ms) {
   const a = pad.gp?.vibrationActuator;
   if (a?.playEffect) a.playEffect('dual-rumble', { startDelay: 0, duration: ms, strongMagnitude: clamp(strong, 0, 1), weakMagnitude: clamp(weak, 0, 1) }).catch(() => {});
 }
+// ================= 仿 CPM：排檔桿 P R N D、喇叭、車燈 =================
+// 排檔桿只在「觸控 + 自排 + 設定開啟」時作用；鍵盤 / 手把維持停下按煞車自動倒車
+let gearSel = 'D';
+const prndOn = () => isTouch && settings.prnd !== false && !settings.manual;
+function setGearSel(g, quiet = false) {
+  if (g === gearSel) return;
+  if (g === 'P' && Math.abs(player.veh?.u || 0) > 1.5) { if (!quiet) toast('車子還在動，停下來才能打 P 檔'); g = 'N'; if (g === gearSel) return; }
+  gearSel = g;
+  const el = $('tprnd'), order = ['P', 'R', 'N', 'D'];
+  el.className = el.className.replace(/\bg-[PRND]\b/g, '').trim() + ' g-' + g;
+  el.querySelectorAll('b').forEach(b => b.classList.toggle('on', b.dataset.g === g));
+  const cell = el.querySelector('b');
+  el.querySelector('.knob').style.transform = `translateY(${order.indexOf(g) * (cell ? cell.offsetHeight + (el.clientHeight - 12 - cell.offsetHeight * 4) / 3 : 40)}px)`;
+  if (!quiet) { navigator.vibrate?.(g === 'R' ? 20 : 10); beep(g === 'R' ? 520 : 760, 0.05, 'square', 0.06); }
+}
+{
+  const el = $('tprnd');
+  let id = null;
+  const pick = e => {
+    const cells = [...el.querySelectorAll('b')];
+    let best = null, bd = 1e9;
+    for (const c of cells) { const r = c.getBoundingClientRect(), d = Math.abs(e.clientY - (r.top + r.height / 2)); if (d < bd) { bd = d; best = c; } }
+    if (best) setGearSel(best.dataset.g);
+  };
+  el.addEventListener('pointerdown', e => { e.preventDefault(); id = e.pointerId; try { el.setPointerCapture(id); } catch { /* 同上 */ } pick(e); });
+  el.addEventListener('pointermove', e => { if (e.pointerId === id) pick(e); });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(ev, e => { if (e.pointerId === id) id = null; });
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+function applyPrnd() {
+  $('touch').classList.toggle('prnd', prndOn());
+  document.querySelectorAll('#prndSet button').forEach(b => b.classList.toggle('on', (b.dataset.p === 'on') === (settings.prnd !== false)));
+  gearSel = ''; setGearSel('D', true);
+}
+
+// 喇叭：兩個略帶失諧的方波（真實汽車喇叭約 400～500 Hz 雙音），按住才響
+let hornNode = null;
+function horn(on) {
+  $('thorn').classList.toggle('active', on);
+  if (!audio) return;
+  const { ctx, master } = audio, t = ctx.currentTime;
+  if (on && !hornNode && !paused) {
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.02);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400; lp.Q.value = 1.2;
+    const oscs = [415, 523].map(f => { const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f; o.connect(lp); o.start(t); return o; });
+    lp.connect(g); g.connect(master);
+    hornNode = { g, oscs };
+    ow.honk?.();
+  } else if (!on && hornNode) {
+    const { g, oscs } = hornNode; hornNode = null;
+    g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(Math.max(0.0001, g.gain.value), t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    for (const o of oscs) o.stop(t + 0.08);
+  }
+}
+{
+  const b = $('thorn');
+  b.addEventListener('pointerdown', e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch { /* 同上 */ } horn(true); navigator.vibrate?.(12); });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, () => horn(false));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+// 車燈：預設跟著日夜自動；按一下改成手動開 / 關（每場比賽重新回到自動）
+let lightsOverride = null;
+const lightsOn = () => lightsOverride ?? nightNow > 0.25;
+function toggleLights() {
+  lightsOverride = !lightsOn();
+  beep(lightsOverride ? 1200 : 900, 0.04, 'square', 0.05);
+  toast(lightsOverride ? '車燈：開' : '車燈：關');
+}
+$('tlights').addEventListener('click', toggleLights);
+function applyPlayerLights() {
+  const m = player.model;
+  setCarLights(m, lightsOverride);
+  if (lightsOverride !== null) m.beam.visible = lightsOverride && !(ow.active && ow.onFoot) && !m.wreck;
+  $('tlights').classList.toggle('on', lightsOn() && !(ow.active && ow.onFoot));
+}
+
 function readControls() {
   if (isTouch) updateTouchSteer();
   return {
@@ -427,6 +508,7 @@ function readControls() {
     steer: clamp((keys.right ? 1 : 0) - (keys.left ? 1 : 0) + (pad.steer || 0) + (touchSteer || 0), -1, 1),
     hand: keys.hand || pad.hand,
     nitro: keys.nitro || pad.nitro,
+    gearSel: prndOn() ? gearSel : undefined,
   };
 }
 const NO_INPUT = { throttle: 0, brake: 0, steer: 0, hand: false, nitro: false };
@@ -639,6 +721,7 @@ function beginRace(sess = session) {
   $('touch').classList.toggle('free', session.mode === 'free');
   $('trackname').classList.toggle('hidden', session.mode === 'free');
   odometer = topSpeed = 0;
+  lightsOverride = null; applyPrnd();
   const free = session.mode === 'free';
   $('lblPos').textContent = free ? '模式' : '名次';
   $('lblLap').textContent = free ? '里程' : '圈數';
@@ -680,7 +763,7 @@ function beginRace(sess = session) {
 function togglePause() {
   if (state !== 'race' && state !== 'countdown') return;
   paused = !paused;
-  if (paused) { releaseTouchKeys(); for (const k in keys) keys[k] = false; }
+  if (paused) { releaseTouchKeys(); for (const k in keys) keys[k] = false; horn(false); }
   $('restartBtn').classList.toggle('hidden', session.mode === 'online');
   $('pausemenu').classList.toggle('hidden', !paused);
   if (audio) paused ? audio.ctx.suspend() : audio.ctx.resume();
@@ -721,7 +804,7 @@ function updatePlayer(dt, ctl) {
   if (ctl.nitro && !boosting && !wasBoosting && v.u > 5) nitroEmptyFlash = 0.6;
   if (boosting && !wasBoosting) { boostKick = 1; nitroWhoosh(); rumble(0.7, 0.9, 350); }
   wasBoosting = boosting;
-  const pc = { throttle: boosting ? 1 : ctl.throttle, brake: ctl.brake, steer: ctl.steer, hand: ctl.hand, boost: boosting };
+  const pc = { throttle: boosting ? 1 : ctl.throttle, brake: ctl.brake, steer: ctl.steer, hand: ctl.hand, boost: boosting, gearSel: ctl.gearSel };
   for (let i = 0; i < SUBSTEPS; i++) v.step(dt / SUBSTEPS, pc, surf);
   // 保險：萬一物理數值壞掉（NaN），把車放回賽道，不讓整場比賽卡死
   if (!Number.isFinite(v.u + v.h + c.pos.x + c.pos.z)) {
@@ -1103,7 +1186,7 @@ function updateHUD() {
     txt('laptime', fmt(player.cross >= 1 && !player.finished ? raceTime - lapStart : 0));
   }
   txt('speed', String(Math.round(Math.abs(player.fwd) * 3.6)));
-  txt('gear', String(player.ai ? 'A' : v.manual ? (v.gear === -1 ? 'R' : v.gear) : v.u < -0.5 ? 'R' : v.gear));
+  txt('gear', String(player.ai ? 'A' : v.manual ? (v.gear === -1 ? 'R' : v.gear) : v.sel && v.sel !== 'D' ? v.sel : v.u < -0.5 ? 'R' : v.gear));
   cls('gear', 'shift', v.manual && !player.ai && v.gear > 0 && v.gear < v.s.gears.length && v.rpm / SPEC.maxRpm > 0.88);
   const rn = v.rpm / SPEC.maxRpm;
   bar('rpmfill', rn * 100);
@@ -1963,6 +2046,7 @@ function setTransmission(manual) {
     if (!manual && player.veh.gear === -1) player.veh.gear = 1;
   }
   $('touch').classList.toggle('manual', manual);
+  applyPrnd();
 }
 
 // ================= 遊戲中的操作提示 =================
@@ -1970,13 +2054,14 @@ function setTransmission(manual) {
 let lastInput = isTouch ? 'touch' : 'kb', hintSig = '', hintShownAt = 0;
 addEventListener('keydown', () => { lastInput = 'kb'; }, true);
 $('touch').addEventListener('pointerdown', () => { lastInput = 'touch'; }, true);
-const PAD_NAME = { 'W': 'RT', 'S': 'LT', 'A D': '左搖桿', 'Space': 'B', 'Shift': 'A', 'E Q': 'RB LB', 'F': 'Y', 'R': 'Back', 'C': 'Y', 'P': 'Start', 'W S': 'RT LT' };
+const PAD_NAME = { 'W': 'RT', 'S': 'LT', 'A D': '左搖桿', 'Space': 'B', 'Shift': 'A', 'E Q': 'RB LB', 'F': 'Y', 'R': 'Back', 'C': 'Y', 'P': 'Start', 'W S': 'RT LT', 'G': 'L3', 'L': 'R3' };
 function hintItems() {
   const free = session.mode === 'free', foot = free && ow.onFoot, manual = !!settings.manual && !foot;
   if (lastInput === 'touch') {
     if (foot) return [['搖桿', '移動 / 轉向'], ['奔跑鈕', '跑步'], ['跳躍鈕', '跳'], ['車門鈕', '上車']];
     const st = { wheel: ['方向盤', '抓住旋轉'], buttons: ['◀ ▶', '按住轉向'], tilt: ['傾斜手機', '轉向'] }[steerMode()];
     const t = [st, ['踏板', '油門 / 煞車'], ['拉桿', '甩尾'], ['氮氣瓶', '加速']];
+    if (prndOn()) t.push(['排檔桿', 'R 倒車 · D 前進']);
     if (manual) t.push(['撥片', '換檔']);
     if (free) t.push(['車門鈕', '下車']);
     return t;
@@ -1987,6 +2072,7 @@ function hintItems() {
     k = [['W', '油門'], ['S', '煞車'], ['A D', '轉向'], ['Space', '甩尾'], ['Shift', '氮氣']];
     if (manual) k.push(['E Q', '升 / 降檔']);
     k.push(free ? ['F', '下車'] : ['R', '回賽道']);
+    if (free) k.push(['G', '喇叭'], ['L', '車燈']);
     if (!(free && lastInput === 'pad')) k.push(['C', '視角']);
   }
   k.push(['P', '暫停']);
@@ -1997,7 +2083,7 @@ function hintItems() {
 function updateCtrlHint() {
   const el = $('ctrlhint');
   const free = session.mode === 'free', foot = free && ow.onFoot;
-  const sig = [settings.hints !== false, lastInput, session.mode, foot, !!settings.manual, steerMode()].join('|');
+  const sig = [settings.hints !== false, lastInput, session.mode, foot, !!settings.manual, steerMode(), prndOn()].join('|');
   if (sig !== hintSig) {
     hintSig = sig; hintShownAt = performance.now();
     el.className = lastInput;
@@ -2132,6 +2218,7 @@ function update(dt) {
     for (const c of field) if (c.ai && !c.net) updateAI(c, dt);
     updateNet(dt);
     if (W.isCity) { updateTraffic(dt); collideTraffic(); collideCity(player); ow.update(dt, state === 'race' ? ctl : NO_INPUT); updateDayNight(dt); cityBeams(); }
+    applyPlayerLights();
     collideCars();
     if (!player.ai && !W.isCity) collideWalls(player);
     for (const c of field) syncModel(c, dt);
@@ -2476,6 +2563,8 @@ document.querySelectorAll('.steermode button').forEach(b => b.onclick = async ()
     try { if (typeof DeviceMotionEvent !== 'undefined' && DeviceMotionEvent.requestPermission && await DeviceMotionEvent.requestPermission() !== 'granted') m = 'wheel'; } catch { m = 'wheel'; }
   }
   settings.steerMode = m; saveSettings(); applySteerMode();
+choose('#prndSet button', 'p', v => { settings.prnd = v === 'on'; saveSettings(); applyPrnd(); });
+applyPrnd();
   if (m === 'tilt') {
     steer.tiltAt = 0;
     setTimeout(() => {
