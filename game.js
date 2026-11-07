@@ -68,8 +68,9 @@ const isTouch = matchMedia('(pointer: coarse)').matches;
 let quality = 'high';
 try { quality = localStorage.getItem(QUALITY_KEY) || (isTouch ? 'low' : 'high'); } catch { quality = isTouch ? 'low' : 'high'; }
 const post = setupPost(renderer, scene, camera);
-// 動態解析度：畫面掉格時自動降低解析度，順了再慢慢調回來
-let dynScale = 1, frameAvg = 16, dynTimer = 0;
+// 動態解析度：畫面跟不上目標幀率時降低解析度，穩定後再慢慢調回來
+// 目標幀時間 = 螢幕一次更新的時間 × 跳幀數（例如 120Hz 螢幕鎖 60fps → 16.7ms）
+let dynScale = 1, frameAvg = 16, dynTimer = 0, upWait = 4, lastUp = -99, perfClock = 0;
 const basePR = () => quality === 'high' ? Math.min(devicePixelRatio, 2) : 1;
 function setPR() {
   const pr = basePR() * dynScale;
@@ -77,14 +78,18 @@ function setPR() {
   post.composer.setPixelRatio(pr);
   resize();
 }
-function adaptResolution(raw) {
+function adaptResolution(raw, target) {
   if (raw > 0.25) return;                       // 切換分頁等造成的停頓不列入
-  frameAvg += (raw * 1000 - frameAvg) * 0.05;
+  perfClock += raw;
+  frameAvg += (raw * 1000 - frameAvg) * 0.06;
   if ((dynTimer += raw) < 1.5) return;
+  if (frameAvg > target * 1.22 && dynScale > 0.5) {
+    if (perfClock - lastUp < 3) upWait = Math.min(60, upWait * 2);   // 剛調高就又跟不上 → 下次等久一點再調高，避免一直切換造成頓一下
+    dynScale = Math.max(0.5, +(dynScale - 0.1).toFixed(2));
+  } else if (frameAvg < target * 1.06 && dynScale < 1 && dynTimer >= upWait) {
+    dynScale = Math.min(1, +(dynScale + 0.05).toFixed(2)); lastUp = perfClock;
+  } else { if (frameAvg > target * 1.06) dynTimer = 0; return; }
   dynTimer = 0;
-  if (frameAvg > 24 && dynScale > 0.5) dynScale = Math.max(0.5, dynScale - 0.1);
-  else if (frameAvg < 14 && dynScale < 1) dynScale = Math.min(1, dynScale + 0.1);
-  else return;
   setPR();
 }
 // 低畫質：關掉車漆的透明漆層與氮氣光源（光源會讓所有物件的光照計算變重）
@@ -431,11 +436,9 @@ function setGearSel(g, quiet = false) {
   if (g === gearSel) return;
   if (g === 'P' && Math.abs(player.veh?.u || 0) > 1.5) { if (!quiet) toast('車子還在動，停下來才能打 P 檔'); g = 'N'; if (g === gearSel) return; }
   gearSel = g;
-  const el = $('tprnd'), order = ['P', 'R', 'N', 'D'];
+  const el = $('tprnd');
   el.className = el.className.replace(/\bg-[PRND]\b/g, '').trim() + ' g-' + g;
   el.querySelectorAll('b').forEach(b => b.classList.toggle('on', b.dataset.g === g));
-  const cell = el.querySelector('b');
-  el.querySelector('.knob').style.transform = `translateY(${order.indexOf(g) * (cell ? cell.offsetHeight + (el.clientHeight - 12 - cell.offsetHeight * 4) / 3 : 40)}px)`;
   if (!quiet) { navigator.vibrate?.(g === 'R' ? 20 : 10); beep(g === 'R' ? 520 : 760, 0.05, 'square', 0.06); }
 }
 {
@@ -722,6 +725,7 @@ function beginRace(sess = session) {
   $('trackname').classList.toggle('hidden', session.mode === 'free');
   odometer = topSpeed = 0;
   lightsOverride = null; applyPrnd();
+  try { renderer.compile(scene, camera); } catch { /* 舊版 three 沒有 compile 就算了 */ }
   const free = session.mode === 'free';
   $('lblPos').textContent = free ? '模式' : '名次';
   $('lblLap').textContent = free ? '里程' : '圈數';
@@ -2257,13 +2261,38 @@ function render(dt) {
   if (quality === 'low') renderer.render(scene, camera);
   else post.composer.render(dt);
 }
-function frame() {
+// 幀率上限：手機預設 60。高更新率螢幕（90 / 120Hz）上，忽快忽慢的 70～100fps 看起來反而比穩定的 60 卡，
+// 也比較容易發燙降頻。做法是「每 N 次螢幕更新才畫一次」，N 依實際偵測到的更新率決定，所以間隔永遠一致。
+const fpsCap = () => +(settings.fpsCap ?? (isTouch ? 60 : 0));
+let vsyncMs = 16.7, vsyncBuf = [], lastTick = 0, tickN = 0;
+const frameSkip = () => { const c = fpsCap(); return c ? Math.max(1, Math.floor(1000 / vsyncMs / c + 0.1)) : 1; };
+const perf = { frames: [], calls: 0, t: 0 };
+function frame(now = performance.now()) {
   requestAnimationFrame(frame);
+  if (lastTick) {
+    vsyncBuf.push(now - lastTick);
+    if (vsyncBuf.length >= 40) { const v = vsyncBuf.sort((a, b) => a - b)[20]; if (v > 4 && v < 40) vsyncMs = v; vsyncBuf = []; }
+  }
+  lastTick = now;
+  if (++tickN < frameSkip()) return;
+  tickN = 0;
   const raw = clock.getDelta();
-  adaptResolution(raw);
+  adaptResolution(raw, vsyncMs * frameSkip());
   const dt = Math.min(raw, 0.05);
   update(dt);
   render(dt);
+  if (settings.perf) perfOverlay(raw);
+}
+// 效能資訊（設定可開）：讓實機上的數字看得到，方便找出卡頓原因
+function perfOverlay(raw) {
+  perf.frames.push(raw * 1000);
+  perf.calls = renderer.info.render.calls || perf.calls;
+  if ((perf.t += raw) < 0.5) return;
+  const f = perf.frames.slice().sort((a, b) => a - b), avg = f.reduce((a, b) => a + b, 0) / f.length;
+  const low = f[Math.min(f.length - 1, Math.floor(f.length * 0.99))];
+  $('perf').textContent = `${(1000 / avg).toFixed(0)} fps · 最慢 ${low.toFixed(0)}ms · 螢幕 ${(1000 / vsyncMs).toFixed(0)}Hz${frameSkip() > 1 ? ' ÷' + frameSkip() : ''} · 解析度 ${Math.round(dynScale * 100)}% · ${quality} · DC ${perf.calls}`;
+  if (perf.frames.length > 120) perf.frames = perf.frames.slice(-60);
+  perf.t = 0;
 }
 
 // ================= 選單與介面 =================
@@ -2563,8 +2592,6 @@ document.querySelectorAll('.steermode button').forEach(b => b.onclick = async ()
     try { if (typeof DeviceMotionEvent !== 'undefined' && DeviceMotionEvent.requestPermission && await DeviceMotionEvent.requestPermission() !== 'granted') m = 'wheel'; } catch { m = 'wheel'; }
   }
   settings.steerMode = m; saveSettings(); applySteerMode();
-choose('#prndSet button', 'p', v => { settings.prnd = v === 'on'; saveSettings(); applyPrnd(); });
-applyPrnd();
   if (m === 'tilt') {
     steer.tiltAt = 0;
     setTimeout(() => {
@@ -2575,6 +2602,14 @@ applyPrnd();
 });
 document.querySelectorAll('.steersens').forEach(el => el.addEventListener('input', () => { settings.steerSens = +el.value; saveSettings(); applySteerMode(); }));
 applySteerMode();
+// ---- 倒車方式、幀率上限、效能資訊 ----
+choose('#prndSet button', 'p', v => { settings.prnd = v === 'on'; saveSettings(); applyPrnd(); });
+document.querySelectorAll('#fpsSet button').forEach(b => b.classList.toggle('on', +b.dataset.f === fpsCap()));
+choose('#fpsSet button', 'f', v => { settings.fpsCap = +v; saveSettings(); tickN = 0; });
+const applyPerf = () => { $('perf').classList.toggle('hidden', !settings.perf); document.querySelectorAll('#perfSet button').forEach(b => b.classList.toggle('on', (b.dataset.v === 'on') === !!settings.perf)); };
+choose('#perfSet button', 'v', v => { settings.perf = v === 'on'; saveSettings(); applyPerf(); });
+applyPerf();
+applyPrnd();
 $('touch').classList.toggle('manual', !!settings.manual);
 $('tdoor').addEventListener('pointerdown', e => { e.preventDefault(); ow.toggleVehicle(); navigator.vibrate?.(15); });
 document.querySelectorAll('#tshift [data-shift]').forEach(b => b.addEventListener('pointerdown', e => {

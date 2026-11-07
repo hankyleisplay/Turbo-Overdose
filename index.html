@@ -29,6 +29,7 @@
   <div class="lhint" id="lhint">載入中…</div>
 </div>
 <div id="fade"></div>
+<div id="perf" class="hidden"></div>
 <div id="flash"></div>
 <canvas id="game"></canvas>
 
@@ -386,6 +387,12 @@
     <div class="row touchonly"><div class="rlabel">靈敏度</div><input type="range" class="steersens" min="1" max="10" step="1"><b class="steersensv"></b></div>
     <div class="row touchonly"><div class="rlabel">倒車</div>
       <div id="prndSet" class="choices"><button data-p="on">排檔桿 P R N D</button><button data-p="off">停下按煞車自動倒車</button></div>
+    </div>
+    <div class="row"><div class="rlabel">幀率</div>
+      <div id="fpsSet" class="choices"><button data-f="30">30（省電）</button><button data-f="60">60</button><button data-f="0">不限</button></div>
+    </div>
+    <div class="row"><div class="rlabel">效能資訊</div>
+      <div id="perfSet" class="choices"><button data-v="on">顯示</button><button data-v="off">隱藏</button></div>
     </div>
     <div class="row"><div class="rlabel">變速箱</div>
       <div id="trans" class="choices"><button data-t="auto">自排</button><button data-t="manual">手排</button></div>
