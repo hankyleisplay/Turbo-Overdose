@@ -2307,11 +2307,16 @@ function menuStage() {
   if (w > 700) camera.setViewOffset(w, h, -w * 0.2, 0, w, h);
   else camera.setViewOffset(w, h, 0, h * 0.12, w, h);
 }
+// 卡片還有內容在下面時加上 .more（底部淡出提示可以往下滑）
+function markScroll(card) { card.classList.toggle('more', card.scrollTop + card.clientHeight < card.scrollHeight - 6); }
+document.querySelectorAll('.screen .card').forEach(c => c.addEventListener('scroll', () => markScroll(c), { passive: true }));
+addEventListener('resize', () => document.querySelectorAll('.screen:not(.hidden) .card').forEach(markScroll));
 function showScreen(id) {
   for (const s of SCREENS) $(s).classList.toggle('hidden', s !== id);
   $('pausemenu').classList.add('hidden');
   document.querySelectorAll('.money').forEach(e => { e.textContent = money(prof.money); });
   if (id === 'menu') menuStage();
+  requestAnimationFrame(() => document.querySelectorAll('.screen:not(.hidden) .card').forEach(markScroll));
 }
 const openScreen = () => SCREENS.find(s => !$(s).classList.contains('hidden'));
 function silenceRace() {
