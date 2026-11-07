@@ -320,9 +320,8 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
 #touch { position: fixed; left: 0; right: 0; bottom: 0; height: 0; z-index: 3; }
 .tctl { position: absolute; touch-action: none; -webkit-tap-highlight-color: transparent; user-select: none; }
 .tctl svg { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 4px 10px rgba(0,0,0,.45)); }
-#twheel { left: 18px; bottom: 18px; width: 150px; height: 150px; opacity: .9; }
-#twheelSvg { transition: transform .18s cubic-bezier(.3,1.4,.5,1); }
-#twheel.active #twheelSvg { transition: none; }
+#twheel { left: calc(18px + env(safe-area-inset-left)); bottom: 16px; width: 172px; height: 172px; opacity: .9; }
+#twheelSvg { will-change: transform; }
 #twheel.active { opacity: 1; }
 .tright { position: absolute; right: 16px; bottom: 16px; width: 214px; height: 220px; }
 .tpedal { bottom: 0; transform-origin: 50% 100%; transition: transform .08s, filter .08s; }
@@ -345,11 +344,11 @@ input[type=range] { width: 200px; accent-color: #ff5a1f; }
 #tnitroRing { transition: stroke-dashoffset .2s; }
 
 @media (max-width: 700px) {
-  #twheel { width: 118px; height: 118px; left: 12px; bottom: 14px; }
+  #twheel { width: 136px; height: 136px; left: 12px; bottom: 12px; }
   .tright { right: 10px; bottom: 12px; transform: scale(.8); transform-origin: 100% 100%; }
 }
 @media (max-height: 450px) and (min-width: 701px) {
-  #twheel { width: 124px; height: 124px; }
+  #twheel { width: 148px; height: 148px; }
   .tright { transform: scale(.82); transform-origin: 100% 100%; }
 }
 
@@ -661,8 +660,14 @@ input[type=range]:focus { outline: none; }
 @media (max-height: 520px) {
   #pausemenu .card { padding: 12px 20px; }
   #pausemenu h2 { font-size: 22px; margin: 0 0 6px; }
-  #pausemenu .menubtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  #pausemenu .menubtns > .go, #pausemenu .menubtns > .row { grid-column: 1 / -1; }
+  #pausemenu .card { width: min(780px, 94vw); }
+  /* 左欄：轉向與音量設定；右欄：繼續 / 重新開始 / 拍照 / 回主選單 */
+  #pausemenu .menubtns { display: grid; grid-template-columns: 1.35fr 1fr; grid-auto-flow: row dense; gap: 8px 18px; align-items: center; margin-top: 8px; }
+  #pausemenu .menubtns > .row { grid-column: 1; flex-wrap: nowrap; }
+  #pausemenu .menubtns > button { grid-column: 2; }
+  #pausemenu .choices { flex-wrap: nowrap; gap: 6px; }
+  #pausemenu .choices button { padding: 6px 10px; font-size: 14px; }
+  #pausemenu .rlabel { min-width: 48px; width: auto; font-size: 14px; }
   #pausemenu .menubtns button { padding: 9px 10px; font-size: 16px; margin: 0; }
   #pausemenu .row { margin: 0; }
 }
@@ -697,3 +702,18 @@ input[type=range]:focus { outline: none; }
   .mm-car { top: auto; bottom: 10px; right: 16px; }
   .mm-car b { font-size: 20px; }
 }
+
+/* ---------- 轉向模式（仿 CPM） ---------- */
+.touchonly { display: none !important; }
+body.touch .touchonly { display: flex !important; }
+.tarrow { display: none; bottom: 22px; width: 92px; height: 92px; border-radius: 18px; background: rgba(12,18,38,.5); border: 1.5px solid rgba(255,255,255,.28);
+  transition: background .08s, transform .08s; }
+.tarrow svg { width: 60%; height: 60%; margin: 20%; }
+.tarrow.active { background: rgba(255,90,31,.55); border-color: #ff8a5a; transform: scale(.94); }
+#tsteerL { left: calc(18px + env(safe-area-inset-left)); }
+#tsteerR { left: calc(124px + env(safe-area-inset-left)); }
+#touch.st-buttons .tarrow { display: block; }
+#touch.st-buttons #twheel, #touch.onfoot .tarrow { display: none; }
+#touch.st-tilt #twheel { opacity: .5; }
+@media (max-width: 700px) { .tarrow { width: 76px; height: 76px; bottom: 16px; } #tsteerR { left: 102px; } }
+.steersensv { min-width: 1.5em; font-family: Orbitron, monospace; color: var(--gold); }

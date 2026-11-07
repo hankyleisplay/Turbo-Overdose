@@ -141,7 +141,11 @@
     </svg>
   </div>
 
-  <!-- 方向盤：按住左右拖曳，類比轉向 -->
+  <!-- 按鈕轉向模式：◀ ▶ -->
+  <div id="tsteerL" class="tctl tarrow" aria-label="左轉"><svg viewBox="0 0 64 64"><path d="M40 14 L20 32 L40 50" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <div id="tsteerR" class="tctl tarrow" aria-label="右轉"><svg viewBox="0 0 64 64"><path d="M24 14 L44 32 L24 50" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+
+  <!-- 方向盤：抓住旋轉（仿 CPM） -->
   <div id="twheel" class="tctl" aria-label="方向盤">
     <svg id="twheelSvg" viewBox="0 0 120 120">
       <circle cx="60" cy="60" r="50" fill="none" stroke="url(#gRim)" stroke-width="14"/>
@@ -365,6 +369,10 @@
     <div class="row"><div class="rlabel">操作提示</div>
       <div id="hintsSet" class="choices"><button data-h="on">顯示</button><button data-h="off">隱藏</button></div>
     </div>
+    <div class="row touchonly"><div class="rlabel">轉向</div>
+      <div class="choices steermode"><button data-s="wheel">方向盤</button><button data-s="buttons">按鈕</button><button data-s="tilt">重力感應</button></div>
+    </div>
+    <div class="row touchonly"><div class="rlabel">靈敏度</div><input type="range" class="steersens" min="1" max="10" step="1"><b class="steersensv"></b></div>
     <div class="row"><div class="rlabel">變速箱</div>
       <div id="trans" class="choices"><button data-t="auto">自排</button><button data-t="manual">手排</button></div>
     </div>
@@ -400,6 +408,10 @@
     <h2>暫停</h2>
     <div class="menubtns">
       <button id="resumeBtn" class="go">繼續</button>
+      <div class="row touchonly"><div class="rlabel">轉向</div>
+        <div class="choices steermode"><button data-s="wheel">方向盤</button><button data-s="buttons">按鈕</button><button data-s="tilt">重力感應</button></div>
+      </div>
+      <div class="row touchonly"><div class="rlabel">靈敏度</div><input type="range" class="steersens" min="1" max="10" step="1"><b class="steersensv"></b></div>
       <div class="row"><div class="rlabel">音樂</div><input type="range" id="pMusicVol" min="0" max="100"></div>
       <div class="row"><div class="rlabel">音效</div><input type="range" id="pSfxVol" min="0" max="100"></div>
       <button id="restartBtn">重新開始</button>

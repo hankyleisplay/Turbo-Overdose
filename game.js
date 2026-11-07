@@ -273,54 +273,119 @@ document.addEventListener('visibilitychange', () => {
   releaseTouchKeys();
   if ((state === 'race' || state === 'countdown') && !paused) togglePause();   // 切到別的 App / 來電時自動暫停
 });
-let touchSteer = 0, touchSteerRaw = 0, touchMove = 0, touchSteerT = 0;
-// 左半邊整塊都是「轉向區」：不必精準按在方向盤上，手指落在哪就從哪開始算（相對位移），
-// 滑出方向盤範圍也不會放開。下車步行時同一塊區域改當搖桿用。
+// ================= 觸控轉向（仿 CPM：方向盤 / 按鈕 / 重力感應，可在設定與暫停選單切換） =================
+// 方向盤：手指「抓住」方向盤繞圈旋轉，手指轉幾度方向盤就轉幾度（1:1），放開後自動回正。
+//         左半邊整塊都能抓，角度以方向盤中心計算；回正途中可以再抓住接著轉。
+// 按鈕：◀ ▶ 按住時轉向量逐漸增加（不是一按就打死），放開回正。
+// 重力感應：把手機當方向盤左右傾斜。
+// 下車步行時，左半邊一律變成搖桿。
+let touchSteer = 0, touchMove = 0, touchFootX = 0;
+const steer = { angle: 0, held: false, btnL: false, btnR: false, tilt: 0, tiltAt: 0, t: 0 };
+const steerSens = () => clamp(Math.round(+settings.steerSens || 5), 1, 10);
+const steerMode = () => settings.steerMode || 'wheel';
+const wheelMax = () => 320 - steerSens() * 24;        // 方向盤打滿要轉幾度：靈敏度 5 = 200°
+const tiltMax = () => 45 - steerSens() * 3;           // 重力感應打滿要傾斜幾度：靈敏度 5 = 30°
 {
-  const zone = $('tzone'), wheel = $('twheel'), svg = $('twheelSvg'), stick = $('tstick'), knob = $('tstickKnob'), touchEl = $('touch');
-  let id = null, ox = 0, oy = 0, foot = false;
+  const zone = $('tzone'), wheel = $('twheel'), stick = $('tstick'), knob = $('tstickKnob'), touchEl = $('touch');
+  let id = null, foot = false, lastA = null;
+  const angleAt = e => {
+    const r = wheel.getBoundingClientRect();
+    const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    return Math.hypot(dx, dy) < Math.max(14, r.width * 0.14) ? null : Math.atan2(dy, dx);   // 太靠近圓心角度會亂跳，先不算
+  };
   const reset = () => {
-    id = null; touchSteerRaw = 0; touchMove = 0;
-    svg.style.transform = ''; knob.style.transform = '';
+    id = null; lastA = null; steer.held = false; touchMove = 0; touchFootX = 0;
+    knob.style.transform = '';
     wheel.classList.remove('active'); stick.classList.remove('active');
   };
-  const set = e => {
+  const move = e => {
     if (foot) {
-      const r = stick.getBoundingClientRect();
-      const R = Math.max(1, r.width * 0.5);
-      let dx = (e.clientX - ox) / R, dy = (e.clientY - oy) / R;
+      const r = stick.getBoundingClientRect(), R = Math.max(1, r.width * 0.5);
+      let dx = (e.clientX - (r.left + R)) / R, dy = (e.clientY - (r.top + R)) / R;
       const len = Math.hypot(dx, dy);
       if (len > 1) { dx /= len; dy /= len; }
       knob.style.transform = `translate(${dx * R * 0.55}px, ${dy * R * 0.55}px)`;
       const dz = v => Math.sign(v) * Math.max(0, Math.abs(v) - 0.15) / 0.85;
-      touchSteerRaw = dz(dx); touchMove = -dz(dy);
-    } else {
-      const w = Math.max(60, wheel.getBoundingClientRect().width);
-      // 往左 / 右拖約 0.9 倍輪寬才打滿；小幅度用冪次曲線放緩
-      const x = clamp((e.clientX - ox) / (w * 0.9), -1, 1);
-      const lin = Math.sign(x) * Math.max(0, Math.abs(x) - 0.06) / 0.94;
-      touchSteerRaw = Math.sign(lin) * Math.abs(lin) ** 1.5;
-      svg.style.transform = `rotate(${touchSteerRaw * 110}deg)`;
+      touchFootX = dz(dx); touchMove = -dz(dy);
+      return;
     }
+    const a = angleAt(e);
+    if (a !== null && lastA !== null) {
+      let d = a - lastA;
+      if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI;
+      const max = wheelMax();
+      steer.angle = clamp(steer.angle + d * 180 / Math.PI, -max, max);
+    }
+    lastA = a;
   };
   zone.addEventListener('pointerdown', e => {
     e.preventDefault();
     if (id !== null) return;
     foot = touchEl.classList.contains('onfoot');
+    if (!foot && steerMode() !== 'wheel') return;      // 按鈕 / 重力模式時，左半邊不轉向
     id = e.pointerId;
     try { zone.setPointerCapture(id); } catch { /* 有些瀏覽器在手指已離開時會丟錯 */ }
-    if (foot) { const r = stick.getBoundingClientRect(); ox = r.left + r.width / 2; oy = r.top + r.height / 2; stick.classList.add('active'); }
-    else { ox = e.clientX; oy = e.clientY; wheel.classList.add('active'); }
-    set(e);
+    if (foot) stick.classList.add('active');
+    else { steer.held = true; lastA = angleAt(e); wheel.classList.add('active'); }
+    move(e);
   });
-  zone.addEventListener('pointermove', e => { if (e.pointerId === id) set(e); });
+  zone.addEventListener('pointermove', e => { if (e.pointerId === id) move(e); });
   const end = e => { if (e.pointerId === id) reset(); };
   zone.addEventListener('pointerup', end);
   zone.addEventListener('pointercancel', end);
   zone.addEventListener('lostpointercapture', end);   // 手指被系統手勢 / 切換 App 搶走時一定要放開，否則會一直打方向
   zone.addEventListener('contextmenu', e => e.preventDefault());
-  addEventListener('blur', reset);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) reset(); });
+
+  // ◀ ▶ 按鈕
+  for (const [elId, key] of [['tsteerL', 'btnL'], ['tsteerR', 'btnR']]) {
+    const b = $(elId);
+    const on = e => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch { /* 同上 */ } steer[key] = true; b.classList.add('active'); navigator.vibrate?.(6); };
+    const off = () => { steer[key] = false; b.classList.remove('active'); };
+    b.addEventListener('pointerdown', on);
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, off);
+    b.addEventListener('contextmenu', e => e.preventDefault());
+  }
+  const releaseAll = () => { reset(); steer.btnL = steer.btnR = false; $('tsteerL').classList.remove('active'); $('tsteerR').classList.remove('active'); };
+  addEventListener('blur', releaseAll);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+}
+// 重力感應：用重力在螢幕平面上的方向算出手機的「方向盤角度」，不受橫向左 / 右擺放影響
+addEventListener('devicemotion', e => {
+  if (steerMode() !== 'tilt') return;
+  const g = e.accelerationIncludingGravity;
+  if (!g || g.x == null || g.y == null) return;
+  const ang = ((screen.orientation?.angle ?? window.orientation ?? 0) * Math.PI) / 180;
+  const sx = g.x * Math.cos(ang) - g.y * Math.sin(ang);   // 「上方」在螢幕座標的 x 分量
+  const sy = g.x * Math.sin(ang) + g.y * Math.cos(ang);   // 「上方」在螢幕座標的 y 分量
+  steer.tilt = Math.atan2(-sx, sy) * 180 / Math.PI;       // 往右傾（順時針）為正
+  steer.tiltAt = performance.now();
+});
+// 每幀更新觸控轉向量（readControls 呼叫）
+let wheelDrawn = NaN;
+function updateTouchSteer() {
+  const now = performance.now(), dt = Math.min(0.1, (now - steer.t) / 1000 || 0);
+  steer.t = now;
+  const mode = steerMode(), svg = $('twheelSvg');
+  if ($('touch').classList.contains('onfoot')) { touchSteer = touchFootX; return; }
+  if (mode === 'wheel') {
+    if (!steer.held && steer.angle) {   // 放開後彈簧回正：遠的時候快、接近中心時柔和
+      const back = Math.max(Math.abs(steer.angle) * 9, 160) * dt;
+      steer.angle = Math.abs(steer.angle) <= back ? 0 : steer.angle - Math.sign(steer.angle) * back;
+    }
+    touchSteer = steer.angle / wheelMax();
+  } else if (mode === 'buttons') {
+    const target = (steer.btnR ? 1 : 0) - (steer.btnL ? 1 : 0);
+    // 按住時逐漸轉到底；放開或反方向時快速回來
+    const rate = target === 0 ? 6 : Math.sign(target) !== Math.sign(touchSteer) && touchSteer !== 0 ? 9 : 1.2 + steerSens() * 0.5;
+    const d = target - touchSteer;
+    touchSteer += Math.sign(d) * Math.min(Math.abs(d), rate * dt);
+  } else {
+    const t = now - steer.tiltAt < 500 ? steer.tilt : 0, m = tiltMax();
+    const want = Math.sign(t) * clamp((Math.abs(t) - 2) / (m - 2), 0, 1);
+    touchSteer += (want - touchSteer) * Math.min(1, 12 * dt);
+  }
+  const deg = mode === 'wheel' ? steer.angle : touchSteer * 120;
+  if (Math.abs(deg - wheelDrawn) > 0.2 || (deg === 0 && wheelDrawn !== 0)) { svg.style.transform = `rotate(${deg.toFixed(1)}deg)`; wheelDrawn = deg; }
 }
 
 const pad = { throttle: 0, brake: 0, steer: 0, hand: false, nitro: false, gp: null };
@@ -355,11 +420,7 @@ function rumble(strong, weak, ms) {
   if (a?.playEffect) a.playEffect('dual-rumble', { startDelay: 0, duration: ms, strongMagnitude: clamp(strong, 0, 1), weakMagnitude: clamp(weak, 0, 1) }).catch(() => {});
 }
 function readControls() {
-  // 觸控轉向做一點低通平滑，避免手指抖動直接變成方向盤抖動
-  const now = performance.now(), dt = Math.min(0.1, (now - touchSteerT) / 1000);
-  touchSteerT = now;
-  touchSteer += (touchSteerRaw - touchSteer) * Math.min(1, 14 * dt);
-  if (Math.abs(touchSteer - touchSteerRaw) < 0.002) touchSteer = touchSteerRaw;
+  if (isTouch) updateTouchSteer();
   return {
     throttle: Math.max(keys.up ? 1 : 0, pad.throttle, touchMove > 0 ? touchMove : 0),
     brake: Math.max(keys.down ? 1 : 0, pad.brake, touchMove < 0 ? -touchMove : 0),
@@ -1176,6 +1237,10 @@ function beginGame() {
   music.play('menu');
   $('loading').classList.add('gone');
   setTimeout(() => $('loading').remove(), 800);
+  // 「點擊畫面開始」那一下放開時的 click 會穿透到底下的主選單按鈕（手機上會直接進某個模式），先吞掉
+  const swallow = e => { e.stopPropagation(); e.preventDefault(); };
+  addEventListener('click', swallow, true);
+  setTimeout(() => removeEventListener('click', swallow, true), 600);
   goImmersive();
 }
 addEventListener('pointerdown', () => {
@@ -1910,7 +1975,8 @@ function hintItems() {
   const free = session.mode === 'free', foot = free && ow.onFoot, manual = !!settings.manual && !foot;
   if (lastInput === 'touch') {
     if (foot) return [['搖桿', '移動 / 轉向'], ['奔跑鈕', '跑步'], ['跳躍鈕', '跳'], ['車門鈕', '上車']];
-    const t = [['方向盤', '左右拖曳轉向'], ['踏板', '油門 / 煞車'], ['拉桿', '甩尾'], ['氮氣瓶', '加速']];
+    const st = { wheel: ['方向盤', '抓住旋轉'], buttons: ['◀ ▶', '按住轉向'], tilt: ['傾斜手機', '轉向'] }[steerMode()];
+    const t = [st, ['踏板', '油門 / 煞車'], ['拉桿', '甩尾'], ['氮氣瓶', '加速']];
     if (manual) t.push(['撥片', '換檔']);
     if (free) t.push(['車門鈕', '下車']);
     return t;
@@ -1931,7 +1997,7 @@ function hintItems() {
 function updateCtrlHint() {
   const el = $('ctrlhint');
   const free = session.mode === 'free', foot = free && ow.onFoot;
-  const sig = [settings.hints !== false, lastInput, session.mode, foot, !!settings.manual].join('|');
+  const sig = [settings.hints !== false, lastInput, session.mode, foot, !!settings.manual, steerMode()].join('|');
   if (sig !== hintSig) {
     hintSig = sig; hintShownAt = performance.now();
     el.className = lastInput;
@@ -2394,6 +2460,32 @@ document.querySelectorAll('#trans button').forEach(b => b.classList.toggle('on',
 choose('#trans button', 't', t => setTransmission(t === 'manual'));
 document.querySelectorAll('#hintsSet button').forEach(b => b.classList.toggle('on', (b.dataset.h === 'on') === (settings.hints !== false)));
 choose('#hintsSet button', 'h', v => { settings.hints = v === 'on'; saveSettings(); });
+// ---- 轉向方式與靈敏度（設定頁與暫停選單各一組，彼此同步） ----
+function applySteerMode() {
+  const m = steerMode(), t = $('touch');
+  for (const k of ['wheel', 'buttons', 'tilt']) t.classList.toggle('st-' + k, m === k);
+  document.querySelectorAll('.steermode button').forEach(b => b.classList.toggle('on', b.dataset.s === m));
+  document.querySelectorAll('.steersens').forEach(el => { el.value = steerSens(); el.style.setProperty('--p', ((el.value - el.min) / (el.max - el.min) * 100) + '%'); });
+  document.querySelectorAll('.steersensv').forEach(el => { el.textContent = steerSens(); });
+  steer.angle = 0; touchSteer = 0;
+}
+document.querySelectorAll('.steermode button').forEach(b => b.onclick = async () => {
+  let m = b.dataset.s;
+  if (m === 'tilt') {
+    // iOS 要在點擊時取得權限；Android 不需要
+    try { if (typeof DeviceMotionEvent !== 'undefined' && DeviceMotionEvent.requestPermission && await DeviceMotionEvent.requestPermission() !== 'granted') m = 'wheel'; } catch { m = 'wheel'; }
+  }
+  settings.steerMode = m; saveSettings(); applySteerMode();
+  if (m === 'tilt') {
+    steer.tiltAt = 0;
+    setTimeout(() => {
+      if (steerMode() === 'tilt' && !steer.tiltAt) { settings.steerMode = 'wheel'; saveSettings(); applySteerMode(); toast('這台裝置讀不到重力感應，已切回方向盤'); }
+      else if (steerMode() === 'tilt') toast('重力感應：把手機當方向盤左右傾斜');
+    }, 1500);
+  }
+});
+document.querySelectorAll('.steersens').forEach(el => el.addEventListener('input', () => { settings.steerSens = +el.value; saveSettings(); applySteerMode(); }));
+applySteerMode();
 $('touch').classList.toggle('manual', !!settings.manual);
 $('tdoor').addEventListener('pointerdown', e => { e.preventDefault(); ow.toggleVehicle(); navigator.vibrate?.(15); });
 document.querySelectorAll('#tshift [data-shift]').forEach(b => b.addEventListener('pointerdown', e => {
